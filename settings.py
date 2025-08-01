@@ -16,7 +16,7 @@ except (FileNotFoundError, KeyError):
     KITE_ACCESS_TOKEN = os.getenv("KITE_ACCESS_TOKEN", "")
 
 # Global config
-TARGET_SYMBOLS = ["ETERNAL", "SWIGGY"]
+TARGET_SYMBOLS = ["ETERNAL", "SWIGGY", "ZOMATO"]
 INTERVAL_OPTIONS = {
     '5minute': '5minute',
     '15minute': '15minute',

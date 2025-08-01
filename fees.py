@@ -1,20 +1,37 @@
-import streamlit as st
+try:
+    import streamlit as st
+    STREAMLIT_AVAILABLE = True
+except ImportError:
+    STREAMLIT_AVAILABLE = False
 
 def get_fee_params():
     # Defaults (can be changed in admin UI)
-    return {
-        'brokerage_per_trade': st.session_state.get('brokerage_per_trade', 20.0),  # INR per trade
-        'stt_percent': st.session_state.get('stt_percent', 0.025),                # % of turnover
-        'exchange_txn_percent': st.session_state.get('exchange_txn_percent', 0.00325), # % of turnover
-        'gst_percent': st.session_state.get('gst_percent', 18.0),                 # % on (brokerage + exchange)
-        'sebi_charges_percent': st.session_state.get('sebi_charges_percent', 0.0001),  # % of turnover
-        'stamp_duty_percent': st.session_state.get('stamp_duty_percent', 0.003),  # % of buy side only
-        'slippage_percent': st.session_state.get('slippage_percent', 0.01),       # % of trade value
-    }
+    if STREAMLIT_AVAILABLE:
+        return {
+            'brokerage_per_trade': st.session_state.get('brokerage_per_trade', 20.0),  # INR per trade
+            'stt_percent': st.session_state.get('stt_percent', 0.025),                # % of turnover
+            'exchange_txn_percent': st.session_state.get('exchange_txn_percent', 0.00325), # % of turnover
+            'gst_percent': st.session_state.get('gst_percent', 18.0),                 # % on (brokerage + exchange)
+            'sebi_charges_percent': st.session_state.get('sebi_charges_percent', 0.0001),  # % of turnover
+            'stamp_duty_percent': st.session_state.get('stamp_duty_percent', 0.003),  # % of buy side only
+            'slippage_percent': st.session_state.get('slippage_percent', 0.01),       # % of trade value
+        }
+    else:
+        # Fallback for testing without streamlit
+        return {
+            'brokerage_per_trade': 20.0,
+            'stt_percent': 0.025,
+            'exchange_txn_percent': 0.00325,
+            'gst_percent': 18.0,
+            'sebi_charges_percent': 0.0001,
+            'stamp_duty_percent': 0.003,
+            'slippage_percent': 0.01,
+        }
 
 def set_fee_params(params):
-    for k, v in params.items():
-        st.session_state[k] = v
+    if STREAMLIT_AVAILABLE:
+        for k, v in params.items():
+            st.session_state[k] = v
 
 def apply_fees(pnl, trade_value, side, params=None):
     """
