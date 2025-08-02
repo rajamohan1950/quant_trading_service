@@ -1,0 +1,38 @@
+version: '3.8'
+
+services:
+  quant-trading-service:
+    build: .
+    ports:
+      - "8501:8501"
+    environment:
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - KITE_API_KEY=${KITE_API_KEY}
+      - KITE_API_SECRET=${KITE_API_SECRET}
+      - KITE_ACCESS_TOKEN=${KITE_ACCESS_TOKEN}
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Optional: Add a database service if needed
+  # postgres:
+  #   image: postgres:13
+  #   environment:
+  #     POSTGRES_DB: quant_trading
+  #     POSTGRES_USER: postgres
+  #     POSTGRES_PASSWORD: password
+  #   volumes:
+  #     - postgres_data:/var/lib/postgresql/data
+  #   ports:
+  #     - "5432:5432"
+
+volumes:
+  postgres_data: 

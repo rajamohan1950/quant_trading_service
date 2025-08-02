@@ -1,6 +1,7 @@
 import streamlit as st
 st.set_page_config(page_title="Quant Trading Service", layout="wide")
 from core.database import setup_database
+from core.version import get_version_info
 from ui.pages.login import render_login_ui
 from ui.pages.ingestion import render_ingestion_ui
 from ui.pages.archive import render_archive_ui
@@ -24,7 +25,8 @@ render_archive_ui()
 render_management_ui()
 
 # Main content area
-st.title("📊 Quant Trading Service")
+version_info = get_version_info()
+st.title(f"📊 Quant Trading Service - {version_info['full_version']}")
 
 # Create tabs for different sections
 tab1, tab2, tab3, tab4 = st.tabs(["📈 Strategies", "📊 Data View", "🔄 Legacy Backtest", "📋 Coverage Report"])
