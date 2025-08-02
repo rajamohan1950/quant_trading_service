@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from database import get_stored_tickers, get_db_connection
-from fees import get_fee_params, apply_fees
+from core.database import get_stored_tickers, get_db_connection
+from core.fees import get_fee_params, apply_fees
 
 def render_backtest_ui():
     st.header("Moving Average Crossover Backtest (5min, from May 1st 2025)")

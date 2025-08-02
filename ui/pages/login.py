@@ -1,6 +1,5 @@
 import streamlit as st
-from kiteconnect import KiteConnect
-from settings import KITE_API_KEY, KITE_API_SECRET, KITE_ACCESS_TOKEN
+from core.settings import KITE_API_KEY, KITE_API_SECRET, KITE_ACCESS_TOKEN
 
 def render_login_ui():
     st.sidebar.header("Kite Connect Login")

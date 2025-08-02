@@ -1,5 +1,5 @@
 import streamlit as st
-from fees import get_fee_params, set_fee_params
+from core.fees import get_fee_params, set_fee_params
 
 def render_admin_ui():
     st.sidebar.header("Admin: Fee/Overhead Configuration")

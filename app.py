@@ -1,14 +1,14 @@
 import streamlit as st
 st.set_page_config(page_title="Quant Trading Service", layout="wide")
-from database import setup_database
-from ui_login import render_login_ui
-from ui_ingestion import render_ingestion_ui
-from ui_archive import render_archive_ui
-from ui_management import render_management_ui
-from ui_view import render_view_ui
-from ui_backtest import render_backtest_ui
-from ui_admin import render_admin_ui
-from ui_strategies import render_strategies_ui
+from core.database import setup_database
+from ui.pages.login import render_login_ui
+from ui.pages.ingestion import render_ingestion_ui
+from ui.pages.archive import render_archive_ui
+from ui.pages.management import render_management_ui
+from ui.pages.view import render_view_ui
+from ui.pages.backtest import render_backtest_ui
+from ui.pages.admin import render_admin_ui
+from ui.pages.strategies import render_strategies_ui
 import os
 
 # --- Database Setup ---

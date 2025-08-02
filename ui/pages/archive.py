@@ -1,5 +1,5 @@
 import streamlit as st
-from database import get_db_connection
+from core.database import get_db_connection
 
 def render_archive_ui():
     st.sidebar.header("Fetched Data Archive")

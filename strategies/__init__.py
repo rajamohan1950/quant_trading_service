@@ -1,1 +1,1 @@
-# Strategies module for quant trading service 
+# Trading Strategies Package 

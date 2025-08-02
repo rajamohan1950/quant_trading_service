@@ -1,5 +1,5 @@
 import streamlit as st
-from database import clear_all_data
+from core.database import clear_all_data
 
 def render_management_ui():
     st.sidebar.header("Database Management")

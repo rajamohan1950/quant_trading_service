@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import datetime
 import altair as alt
-from database import get_stored_tickers
+from core.database import get_stored_tickers
 from strategies.strategy_manager import StrategyManager
 
 def render_strategies_ui():

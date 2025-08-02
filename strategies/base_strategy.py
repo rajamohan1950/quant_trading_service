@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from abc import ABC, abstractmethod
-from fees import get_fee_params, apply_fees
+from core.fees import get_fee_params, apply_fees
 
 class BaseStrategy(ABC):
     def __init__(self, name, description):

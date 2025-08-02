@@ -7,9 +7,9 @@ import streamlit as st
 import pandas as pd
 import datetime
 from kiteconnect import KiteConnect
-from settings import KITE_API_KEY, KITE_API_SECRET, KITE_ACCESS_TOKEN
-from database import get_db_connection, log_fetch
-from ingestion import fetch_and_store_data
+from core.settings import KITE_API_KEY, KITE_API_SECRET, KITE_ACCESS_TOKEN
+from core.database import get_db_connection, log_fetch
+from data.ingestion import fetch_and_store_data
 
 def fetch_zomato_data():
     """Fetch ZOMATO data for the last 6 months with 1-hour candles"""

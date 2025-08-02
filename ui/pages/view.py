@@ -1,5 +1,5 @@
 import streamlit as st
-from database import get_stored_tickers, get_db_connection
+from core.database import get_stored_tickers, get_db_connection
 
 def render_view_ui():
     st.header("View Stored Data")

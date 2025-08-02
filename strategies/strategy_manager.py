@@ -1,6 +1,6 @@
 import pandas as pd
 import streamlit as st
-from database import get_db_connection
+from core.database import get_db_connection
 from strategies.ema_atr_strategy import EMAAtrStrategy
 from strategies.ma_crossover_strategy import MACrossoverStrategy
 

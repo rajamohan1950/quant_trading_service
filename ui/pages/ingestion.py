@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
 import datetime
-from settings import TARGET_SYMBOLS
-from intervals import INTERVAL_OPTIONS
-from ingestion import fetch_and_store_data
+from core.settings import TARGET_SYMBOLS
+from core.intervals import INTERVAL_OPTIONS
+from data.ingestion import fetch_and_store_data
 
 def render_ingestion_ui():
     st.sidebar.header("Data Ingestion Controls")
