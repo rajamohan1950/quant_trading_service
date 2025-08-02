@@ -28,7 +28,8 @@ def render_backtest_ui():
                 df_bt['ma20'] = df_bt['close'].rolling(window=20).mean()
                 df_bt['ma50'] = df_bt['close'].rolling(window=50).mean()
                 df_bt['signal'] = 0
-                df_bt['signal'][20:] = np.where(df_bt['ma20'][20:] > df_bt['ma50'][20:], 1, 0)
+                # Fix pandas chained assignment warning
+                df_bt.loc[20:, 'signal'] = np.where(df_bt.loc[20:, 'ma20'] > df_bt.loc[20:, 'ma50'], 1, 0)
                 df_bt['position'] = df_bt['signal'].diff()
                 trades = []
                 position = None
