@@ -48,7 +48,7 @@ def render_backtest_ui():
                     elif row['position'] == -1:
                         if position == 'long':
                             exit_price = row['close']
-                            trades.append((row['datetime'], 'SELL', row['close']))
+                            trades.append((row['datetime'], 'SELL', exit_price))
                             pnl = exit_price - entry_price
                             trade_value = entry_price + exit_price
                             pnl_after_fees, total_fees = apply_fees(pnl, trade_value, 'SELL', fee_params)
@@ -127,4 +127,4 @@ def render_backtest_ui():
                 ).properties(title='Close Price')
                 ma20_line = alt.Chart(df_bt).mark_line(color='orange').encode(x='datetime:T', y='ma20:Q')
                 ma50_line = alt.Chart(df_bt).mark_line(color='green').encode(x='datetime:T', y='ma50:Q')
-                st.altair_chart(chart + ma20_line + ma50_line, use_container_width=True) 
+                st.altair_chart(chart + ma20_line + ma50_line) 
