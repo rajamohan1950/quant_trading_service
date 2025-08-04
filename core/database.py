@@ -1,5 +1,5 @@
 import duckdb
-from settings import DB_FILE
+from core.settings import DB_FILE
 
 def get_db_connection():
     """Establishes a connection to the DuckDB database."""
