@@ -46,7 +46,7 @@ def render_latency_monitor_ui():
         # Control buttons
         col1, col2 = st.columns(2)
         with col1:
-            start_test = st.button("🚀 Start Test", type="primary")
+            start_test = st.button("🚀 Start Test")
         with col2:
             stop_test = st.button("⏹️ Stop Test")
     
@@ -137,7 +137,7 @@ def render_latency_monitor_ui():
                 height=400
             )
             
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig)
     
     with col2:
         st.subheader("📊 Statistics")
@@ -177,7 +177,7 @@ def render_latency_monitor_ui():
             }
             
             stats_df = pd.DataFrame(stats_data)
-            st.dataframe(stats_df, use_container_width=True)
+            st.dataframe(stats_df)
             
             # Percentile chart
             percentiles = [50, 75, 90, 95, 99]
@@ -199,7 +199,7 @@ def render_latency_monitor_ui():
                 barmode='group'
             )
             
-            st.plotly_chart(fig_pct, use_container_width=True)
+            st.plotly_chart(fig_pct)
     
     # System status
     st.subheader("🔧 System Status")
@@ -226,8 +226,7 @@ def render_latency_monitor_ui():
         recent_df['timestamp'] = pd.to_datetime(recent_df['timestamp']).dt.strftime('%H:%M:%S.%f')
         
         st.dataframe(
-            recent_df[['timestamp', 'symbol', 'price', 't1', 't2', 't3', 'total']],
-            use_container_width=True
+            recent_df[['timestamp', 'symbol', 'price', 't1', 't2', 't3', 'total']]
         )
     
     # Control panel
