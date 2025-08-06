@@ -1,0 +1,8 @@
+
+[package]
+name = "tick_receiver"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rdkafka = "0.29"

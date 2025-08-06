@@ -1,0 +1,11 @@
+[package]
+name = "tbt_udp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+
+[features]
+default = []
+server = []
+

@@ -1,0 +1,13 @@
+[package]
+name = "tbt_gen"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+bytes = "1.4"
+rand = "0.8"
+tokio-tungstenite = "0.20"
+futures-util = "0.3"
+rdkafka = { version = "0.34", features = ["tokio"] }
+tokio-stream = "0.1"

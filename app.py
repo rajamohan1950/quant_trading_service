@@ -10,6 +10,7 @@ from ui.pages.view import render_view_ui
 from ui.pages.backtest import render_backtest_ui
 from ui.pages.admin import render_admin_ui
 from ui.pages.strategies import render_strategies_ui
+from ui.pages.latency_monitor import render_latency_monitor_ui
 import os
 
 # --- Database Setup ---
@@ -29,7 +30,7 @@ version_info = get_version_info()
 st.title(f"📊 Quant Trading Service - {version_info['full_version']}")
 
 # Create tabs for different sections
-tab1, tab2, tab3, tab4 = st.tabs(["📈 Strategies", "📊 Data View", "🔄 Legacy Backtest", "📋 Coverage Report"])
+tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Strategies", "📊 Data View", "🔄 Legacy Backtest", "📋 Coverage Report", "⚡ Latency Monitor"])
 
 with tab1:
     render_strategies_ui()
@@ -52,3 +53,6 @@ with tab4:
             st.info("No coverage report found. Run `pytest --cov=app --cov-report=html:coverage_html` to generate it.")
 
     show_coverage_report()
+
+with tab5:
+    render_latency_monitor_ui()
