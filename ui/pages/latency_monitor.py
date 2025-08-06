@@ -51,171 +51,171 @@ def render_latency_monitor_ui():
             stop_test = st.button("⏹️ Stop Test")
     
     # Main content area
-    col1, col2 = st.columns([2, 1])
+    st.subheader("📈 Real-time Latency Metrics")
     
-    with col1:
-        st.subheader("📈 Real-time Latency Metrics")
-        
-        # Latency metrics display
-        if 'latency_data' not in st.session_state:
-            st.session_state.latency_data = []
-        
-        # Create metrics containers
-        metric_cols = st.columns(4)
-        
-        with metric_cols[0]:
-            st.metric(
-                "Tick Generator → WS",
-                f"{np.mean([d['t1'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms",
-                delta=f"{np.std([d['t1'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms"
-            )
-        
-        with metric_cols[1]:
-            st.metric(
-                "WS → Kafka Producer",
-                f"{np.mean([d['t2'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms",
-                delta=f"{np.std([d['t2'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms"
-            )
-        
-        with metric_cols[2]:
-            st.metric(
-                "Kafka Producer → Consumer",
-                f"{np.mean([d['t3'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms",
-                delta=f"{np.std([d['t3'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms"
-            )
-        
-        with metric_cols[3]:
-            st.metric(
-                "End-to-End Latency",
-                f"{np.mean([d['total'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms",
-                delta=f"{np.std([d['total'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms"
-            )
-        
-        # Latency chart
-        if st.session_state.latency_data:
-            df = pd.DataFrame(st.session_state.latency_data)
-            df['timestamp'] = pd.to_datetime(df['timestamp'])
-            
-            fig = go.Figure()
-            
-            fig.add_trace(go.Scatter(
-                x=df['timestamp'],
-                y=df['t1'],
-                mode='lines+markers',
-                name='Tick Generator → WS',
-                line=dict(color='blue')
-            ))
-            
-            fig.add_trace(go.Scatter(
-                x=df['timestamp'],
-                y=df['t2'],
-                mode='lines+markers',
-                name='WS → Kafka Producer',
-                line=dict(color='green')
-            ))
-            
-            fig.add_trace(go.Scatter(
-                x=df['timestamp'],
-                y=df['t3'],
-                mode='lines+markers',
-                name='Kafka Producer → Consumer',
-                line=dict(color='orange')
-            ))
-            
-            fig.add_trace(go.Scatter(
-                x=df['timestamp'],
-                y=df['total'],
-                mode='lines+markers',
-                name='End-to-End',
-                line=dict(color='red', width=3)
-            ))
-            
-            fig.update_layout(
-                title="Real-time Latency Monitoring",
-                xaxis_title="Time",
-                yaxis_title="Latency (ms)",
-                height=400
-            )
-            
-            st.plotly_chart(fig)
+    # Latency metrics display
+    if 'latency_data' not in st.session_state:
+        st.session_state.latency_data = []
     
-    with col2:
-        st.subheader("📊 Statistics")
+    # Create metrics containers - using rows instead of nested columns
+    st.markdown("**Latency Metrics**")
+    
+    # Row 1: Metrics
+    metric_row1 = st.columns(4)
+    
+    with metric_row1[0]:
+        st.metric(
+            "Tick Generator → WS",
+            f"{np.mean([d['t1'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms",
+            delta=f"{np.std([d['t1'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms"
+        )
+    
+    with metric_row1[1]:
+        st.metric(
+            "WS → Kafka Producer",
+            f"{np.mean([d['t2'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms",
+            delta=f"{np.std([d['t2'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms"
+        )
+    
+    with metric_row1[2]:
+        st.metric(
+            "Kafka Producer → Consumer",
+            f"{np.mean([d['t3'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms",
+            delta=f"{np.std([d['t3'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms"
+        )
+    
+    with metric_row1[3]:
+        st.metric(
+            "End-to-End Latency",
+            f"{np.mean([d['total'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms",
+            delta=f"{np.std([d['total'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms"
+        )
+    
+    # Latency chart
+    if st.session_state.latency_data:
+        df = pd.DataFrame(st.session_state.latency_data)
+        df['timestamp'] = pd.to_datetime(df['timestamp'])
         
-        if st.session_state.latency_data:
-            df = pd.DataFrame(st.session_state.latency_data)
-            
-            # Summary statistics
-            st.markdown("**Latency Summary (ms)**")
-            
-            stats_data = {
-                'Metric': ['Tick→WS', 'WS→Kafka', 'Kafka→Consumer', 'End-to-End'],
-                'Mean': [
-                    df['t1'].mean(),
-                    df['t2'].mean(),
-                    df['t3'].mean(),
-                    df['total'].mean()
-                ],
-                'Std': [
-                    df['t1'].std(),
-                    df['t2'].std(),
-                    df['t3'].std(),
-                    df['total'].std()
-                ],
-                'Min': [
-                    df['t1'].min(),
-                    df['t2'].min(),
-                    df['t3'].min(),
-                    df['total'].min()
-                ],
-                'Max': [
-                    df['t1'].max(),
-                    df['t2'].max(),
-                    df['t3'].max(),
-                    df['total'].max()
-                ]
-            }
-            
-            stats_df = pd.DataFrame(stats_data)
-            st.dataframe(stats_df)
-            
-            # Percentile chart
-            percentiles = [50, 75, 90, 95, 99]
-            percentile_data = {
-                'Percentile': percentiles,
-                'Tick→WS': [df['t1'].quantile(p/100) for p in percentiles],
-                'WS→Kafka': [df['t2'].quantile(p/100) for p in percentiles],
-                'Kafka→Consumer': [df['t3'].quantile(p/100) for p in percentiles],
-                'End-to-End': [df['total'].quantile(p/100) for p in percentiles]
-            }
-            
-            percentile_df = pd.DataFrame(percentile_data)
-            
-            fig_pct = px.bar(
-                percentile_df,
-                x='Percentile',
-                y=['Tick→WS', 'WS→Kafka', 'Kafka→Consumer', 'End-to-End'],
-                title="Latency Percentiles",
-                barmode='group'
-            )
-            
-            st.plotly_chart(fig_pct)
+        fig = go.Figure()
+        
+        fig.add_trace(go.Scatter(
+            x=df['timestamp'],
+            y=df['t1'],
+            mode='lines+markers',
+            name='Tick Generator → WS',
+            line=dict(color='blue')
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=df['timestamp'],
+            y=df['t2'],
+            mode='lines+markers',
+            name='WS → Kafka Producer',
+            line=dict(color='green')
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=df['timestamp'],
+            y=df['t3'],
+            mode='lines+markers',
+            name='Kafka Producer → Consumer',
+            line=dict(color='orange')
+        ))
+        
+        fig.add_trace(go.Scatter(
+            x=df['timestamp'],
+            y=df['total'],
+            mode='lines+markers',
+            name='End-to-End',
+            line=dict(color='red', width=3)
+        ))
+        
+        fig.update_layout(
+            title="Real-time Latency Monitoring",
+            xaxis_title="Time",
+            yaxis_title="Latency (ms)",
+            height=400
+        )
+        
+        st.plotly_chart(fig)
+    
+    # Statistics section
+    st.subheader("📊 Statistics")
+    
+    if st.session_state.latency_data:
+        df = pd.DataFrame(st.session_state.latency_data)
+        
+        # Summary statistics
+        st.markdown("**Latency Summary (ms)**")
+        
+        stats_data = {
+            'Metric': ['Tick→WS', 'WS→Kafka', 'Kafka→Consumer', 'End-to-End'],
+            'Mean': [
+                df['t1'].mean(),
+                df['t2'].mean(),
+                df['t3'].mean(),
+                df['total'].mean()
+            ],
+            'Std': [
+                df['t1'].std(),
+                df['t2'].std(),
+                df['t3'].std(),
+                df['total'].std()
+            ],
+            'Min': [
+                df['t1'].min(),
+                df['t2'].min(),
+                df['t3'].min(),
+                df['total'].min()
+            ],
+            'Max': [
+                df['t1'].max(),
+                df['t2'].max(),
+                df['t3'].max(),
+                df['total'].max()
+            ]
+        }
+        
+        stats_df = pd.DataFrame(stats_data)
+        st.dataframe(stats_df)
+        
+        # Percentile chart
+        percentiles = [50, 75, 90, 95, 99]
+        percentile_data = {
+            'Percentile': percentiles,
+            'Tick→WS': [df['t1'].quantile(p/100) for p in percentiles],
+            'WS→Kafka': [df['t2'].quantile(p/100) for p in percentiles],
+            'Kafka→Consumer': [df['t3'].quantile(p/100) for p in percentiles],
+            'End-to-End': [df['total'].quantile(p/100) for p in percentiles]
+        }
+        
+        percentile_df = pd.DataFrame(percentile_data)
+        
+        fig_pct = px.bar(
+            percentile_df,
+            x='Percentile',
+            y=['Tick→WS', 'WS→Kafka', 'Kafka→Consumer', 'End-to-End'],
+            title="Latency Percentiles",
+            barmode='group'
+        )
+        
+        st.plotly_chart(fig_pct)
     
     # System status
     st.subheader("🔧 System Status")
     
-    status_cols = st.columns(4)
+    status_row = st.columns(4)
     
-    with status_cols[0]:
+    with status_row[0]:
         st.info(f"**Tick Generator**\nStatus: {'🟢 Running' if start_test else '🔴 Stopped'}\nRate: {tick_rate} ticks/sec")
     
-    with status_cols[1]:
+    with status_row[1]:
         st.info(f"**WebSocket Server**\nStatus: {'🟢 Connected' if start_test else '🔴 Disconnected'}\nPort: {ws_port}")
     
-    with status_cols[2]:
+    with status_row[2]:
         st.info(f"**Kafka Producer**\nStatus: {'🟢 Active' if start_test else '🔴 Inactive'}\nTopic: {kafka_topic}")
     
-    with status_cols[3]:
+    with status_row[3]:
         st.info(f"**Kafka Consumer**\nStatus: {'🟢 Consuming' if start_test else '🔴 Idle'}\nMessages: {len(st.session_state.latency_data)}")
     
     # Recent messages
@@ -232,14 +232,14 @@ def render_latency_monitor_ui():
     # Control panel
     st.subheader("🎮 Control Panel")
     
-    control_cols = st.columns(3)
+    control_row = st.columns(3)
     
-    with control_cols[0]:
+    with control_row[0]:
         if st.button("🔄 Clear Data"):
             st.session_state.latency_data = []
             st.rerun()
     
-    with control_cols[1]:
+    with control_row[1]:
         if st.button("📊 Export Data"):
             if st.session_state.latency_data:
                 df_export = pd.DataFrame(st.session_state.latency_data)
@@ -251,7 +251,7 @@ def render_latency_monitor_ui():
                     mime="text/csv"
                 )
     
-    with control_cols[2]:
+    with control_row[2]:
         if st.button("⚙️ System Info"):
             st.json({
                 "tick_generator": {
@@ -270,6 +270,11 @@ def render_latency_monitor_ui():
                     "status": "active" if start_test else "inactive"
                 }
             })
+    
+    # Auto-refresh for real-time updates
+    if st.button("🔄 Refresh Data"):
+        simulate_latency_data()
+        st.rerun()
 
 def simulate_latency_data():
     """Simulate latency data for demonstration"""
@@ -296,18 +301,4 @@ def simulate_latency_data():
     
     # Keep only last 1000 records
     if len(st.session_state.latency_data) > 1000:
-        st.session_state.latency_data = st.session_state.latency_data[-1000:]
-
-# Auto-refresh for real-time updates
-if st.button("🔄 Refresh Data"):
-    simulate_latency_data()
-    st.rerun()
-
-# Auto-refresh every 2 seconds when test is running
-if 'auto_refresh' not in st.session_state:
-    st.session_state.auto_refresh = False
-
-if st.session_state.auto_refresh:
-    time.sleep(2)
-    simulate_latency_data()
-    st.rerun() 
+        st.session_state.latency_data = st.session_state.latency_data[-1000:] 
