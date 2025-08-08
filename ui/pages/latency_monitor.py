@@ -71,11 +71,11 @@ def render_latency_monitor_ui():
     
     with col2:
         # Infrastructure controls
-        if st.button("🏗️ Start Infrastructure"):
+        if st.button("🏗️ Start Infrastructure", key="start_infra_btn"):
             start_infrastructure()
             st.success("✅ Infrastructure started!")
         
-        if st.button("🛑 Stop Infrastructure"):
+        if st.button("🛑 Stop Infrastructure", key="stop_infra_btn"):
             stop_infrastructure()
             st.success("✅ Infrastructure stopped!")
     
@@ -88,7 +88,7 @@ def render_latency_monitor_ui():
     col1, col2 = st.columns(2)
     
     with col1:
-        if st.button("🚀 Start Test", disabled=st.session_state.test_running):
+        if st.button("🚀 Start Test", disabled=st.session_state.test_running, key="start_test_btn"):
             st.session_state.test_running = True
             st.session_state.test_start_time = time.time()
             st.session_state.latency_data = []  # Clear previous data
@@ -98,7 +98,7 @@ def render_latency_monitor_ui():
             st.success("✅ Test started! Generating ticks...")
     
     with col2:
-        if st.button("⏹️ End Test", disabled=not st.session_state.test_running):
+        if st.button("⏹️ End Test", disabled=not st.session_state.test_running, key="end_test_btn"):
             st.session_state.test_running = False
             st.session_state.test_end_time = time.time()
             
@@ -118,7 +118,7 @@ def render_latency_monitor_ui():
                 st.info("💡 Make sure infrastructure is running and try again.")
     
     # Simulation button for testing
-    if st.button("🧪 Simulate Data (for testing)"):
+    if st.button("🧪 Simulate Data (for testing)", key="simulate_data_btn"):
         simulate_latency_data()
         st.rerun()
     
@@ -178,7 +178,7 @@ def render_latency_monitor_ui():
             st.dataframe(df)
             
             # Export button
-            if st.button("📥 Export Results"):
+            if st.button("📥 Export Results", key="export_results_btn"):
                 csv = df.to_csv(index=False)
                 st.download_button(
                     label="Download CSV",
@@ -206,18 +206,18 @@ def render_latency_monitor_ui():
         col1, col2 = st.columns(2)
         
         with col1:
-            if st.button("🏗️ Start Infrastructure"):
+            if st.button("🏗️ Start Infrastructure", key="troubleshoot_start_infra_btn"):
                 start_infrastructure()
                 st.success("✅ Infrastructure started! Try running the test again.")
         
         with col2:
-            if st.button("🧪 Simulate Data"):
+            if st.button("🧪 Simulate Data", key="troubleshoot_simulate_btn"):
                 simulate_latency_data()
                 st.success("✅ Simulated data generated! Check results above.")
                 st.rerun()
     
     # Clear data button
-    if st.button("🗑️ Clear All Data"):
+    if st.button("🗑️ Clear All Data", key="clear_data_btn"):
         st.session_state.latency_data = []
         st.session_state.test_running = False
         if 'tick_process' in st.session_state:
