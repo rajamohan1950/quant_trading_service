@@ -110,7 +110,12 @@ def render_latency_monitor_ui():
                 except:
                     pass
             
-            st.success("✅ Test stopped! Analyzing results...")
+            # Check if we have any data to analyze
+            if len(st.session_state.latency_data) > 0:
+                st.success("✅ Test stopped! Analyzing results...")
+            else:
+                st.warning("⚠️ Test stopped! No latency data collected.")
+                st.info("💡 Make sure infrastructure is running and try again.")
     
     # Simulation button for testing
     if st.button("🧪 Simulate Data (for testing)"):
@@ -128,6 +133,18 @@ def render_latency_monitor_ui():
             progress = min(elapsed / estimated_duration, 1.0) if estimated_duration > 0 else 0
             st.progress(progress)
             st.write(f"⏱️ Elapsed: {elapsed:.1f}s / {estimated_duration:.1f}s")
+        
+        # Data collection status
+        st.write(f"📊 Data Points Collected: {len(st.session_state.latency_data)}")
+        
+        if len(st.session_state.latency_data) == 0:
+            st.warning("⚠️ No latency data collected yet. Check if infrastructure is running.")
+    
+    # Show data collection status even when not running
+    elif len(st.session_state.latency_data) > 0:
+        st.markdown("### 📊 Data Status")
+        st.success(f"✅ {len(st.session_state.latency_data)} latency data points collected")
+        st.write(f"📈 Latest data: {st.session_state.latency_data[-1]['timestamp'] if st.session_state.latency_data else 'None'}")
     
     # Results display
     if not st.session_state.test_running and len(st.session_state.latency_data) > 0:
@@ -169,6 +186,35 @@ def render_latency_monitor_ui():
                     file_name=f"latency_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                     mime="text/csv"
                 )
+    
+    # Handle case when test ended but no data collected
+    elif not st.session_state.test_running and len(st.session_state.latency_data) == 0:
+        st.markdown("### 📈 Test Results")
+        st.warning("⚠️ No latency data collected during the test.")
+        st.info("💡 This could be because:")
+        st.info("• Infrastructure (Kafka/WebSocket) was not running")
+        st.info("• Tick generator failed to connect")
+        st.info("• No ticks were generated during the test period")
+        
+        # Show test summary
+        if 'test_start_time' in st.session_state and 'test_end_time' in st.session_state:
+            duration = st.session_state.test_end_time - st.session_state.test_start_time
+            st.info(f"⏱️ Test Duration: {duration:.1f} seconds")
+        
+        # Provide troubleshooting options
+        st.markdown("### 🔧 Troubleshooting")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            if st.button("🏗️ Start Infrastructure"):
+                start_infrastructure()
+                st.success("✅ Infrastructure started! Try running the test again.")
+        
+        with col2:
+            if st.button("🧪 Simulate Data"):
+                simulate_latency_data()
+                st.success("✅ Simulated data generated! Check results above.")
+                st.rerun()
     
     # Clear data button
     if st.button("🗑️ Clear All Data"):
