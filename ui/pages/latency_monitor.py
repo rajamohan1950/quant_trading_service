@@ -10,6 +10,10 @@ import websockets
 import threading
 from typing import Dict, List, Optional
 import numpy as np
+import requests
+import subprocess
+import os
+import requests
 
 def render_latency_monitor_ui():
     """Render the latency monitoring UI page"""
@@ -23,11 +27,32 @@ def render_latency_monitor_ui():
         
         # Tick Generator Settings
         st.markdown("**Tick Generator Settings**")
-        tick_rate = st.slider("Tick Rate (ticks/sec)", 1, 1000, 100)
+        
+        # Tick volume selection
+        tick_volume = st.selectbox(
+            "Tick Volume",
+            ["1K", "10K", "100K", "1M", "10M", "Custom"],
+            index=4  # Default to 10M
+        )
+        
+        if tick_volume == "Custom":
+            custom_volume = st.number_input("Custom Volume", 1000, 100000000, 10000000)
+            total_ticks = custom_volume
+        else:
+            volume_map = {
+                "1K": 1000,
+                "10K": 10000,
+                "100K": 100000,
+                "1M": 1000000,
+                "10M": 10000000
+            }
+            total_ticks = volume_map[tick_volume]
+        
+        tick_rate = st.slider("Tick Rate (ticks/sec)", 1, 10000, 1000)
         tick_symbols = st.multiselect(
             "Symbols to Generate",
-            ["NIFTY", "BANKNIFTY", "RELIANCE", "TCS", "INFY", "HDFC", "ICICIBANK"],
-            default=["NIFTY", "BANKNIFTY"]
+            ["NIFTY", "BANKNIFTY", "RELIANCE", "TCS", "INFY", "HDFC", "ICICIBANK", "WIPRO", "HCLTECH", "TATAMOTORS"],
+            default=["NIFTY", "BANKNIFTY", "RELIANCE", "TCS"]
         )
         
         # WebSocket Settings
@@ -41,7 +66,8 @@ def render_latency_monitor_ui():
         kafka_topic = st.text_input("Kafka Topic", "tick-data")
         
         # Test Duration
-        test_duration = st.slider("Test Duration (seconds)", 10, 300, 60)
+        estimated_duration = total_ticks / tick_rate if tick_rate > 0 else 0
+        st.info(f"**Estimated Duration**: {estimated_duration:.1f} seconds ({estimated_duration/60:.1f} minutes)")
         
         # Control buttons
         col1, col2 = st.columns(2)
@@ -49,6 +75,22 @@ def render_latency_monitor_ui():
             start_test = st.button("🚀 Start Test")
         with col2:
             stop_test = st.button("⏹️ Stop Test")
+        
+        # Infrastructure controls
+        st.markdown("**Infrastructure Controls**")
+        if st.button("🏗️ Start Infrastructure"):
+            start_infrastructure()
+        
+        if st.button("🛑 Stop Infrastructure"):
+            stop_infrastructure()
+        
+        if st.button("📊 Check Status"):
+            check_infrastructure_status()
+        
+        # Real-time tick generation
+        st.markdown("**Real-time Tick Generation**")
+        if st.button("🎯 Generate 10M Ticks"):
+            generate_ticks(total_ticks, tick_rate, tick_symbols)
     
     # Main content area
     st.subheader("📈 Real-time Latency Metrics")
@@ -56,6 +98,12 @@ def render_latency_monitor_ui():
     # Latency metrics display
     if 'latency_data' not in st.session_state:
         st.session_state.latency_data = []
+    
+    if 'test_status' not in st.session_state:
+        st.session_state.test_status = "idle"
+    
+    if 'test_progress' not in st.session_state:
+        st.session_state.test_progress = 0
     
     # Create metrics containers - using rows instead of nested columns
     st.markdown("**Latency Metrics**")
@@ -90,6 +138,11 @@ def render_latency_monitor_ui():
             f"{np.mean([d['total'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms",
             delta=f"{np.std([d['total'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms"
         )
+    
+    # Test progress
+    if st.session_state.test_status == "running":
+        progress = st.progress(st.session_state.test_progress / total_ticks)
+        st.info(f"🔄 Test Progress: {st.session_state.test_progress:,} / {total_ticks:,} ticks ({st.session_state.test_progress/total_ticks*100:.1f}%)")
     
     # Latency chart
     if st.session_state.latency_data:
@@ -207,16 +260,20 @@ def render_latency_monitor_ui():
     status_row = st.columns(4)
     
     with status_row[0]:
-        st.info(f"**Tick Generator**\nStatus: {'🟢 Running' if start_test else '🔴 Stopped'}\nRate: {tick_rate} ticks/sec")
+        status_color = "🟢" if st.session_state.test_status == "running" else "🔴"
+        st.info(f"**Tick Generator**\nStatus: {status_color} {st.session_state.test_status.title()}\nRate: {tick_rate} ticks/sec\nVolume: {total_ticks:,}")
     
     with status_row[1]:
-        st.info(f"**WebSocket Server**\nStatus: {'🟢 Connected' if start_test else '🔴 Disconnected'}\nPort: {ws_port}")
+        ws_status = "🟢 Connected" if check_websocket_status(ws_host, ws_port) else "🔴 Disconnected"
+        st.info(f"**WebSocket Server**\nStatus: {ws_status}\nPort: {ws_port}")
     
     with status_row[2]:
-        st.info(f"**Kafka Producer**\nStatus: {'🟢 Active' if start_test else '🔴 Inactive'}\nTopic: {kafka_topic}")
+        kafka_status = "🟢 Active" if check_kafka_status(kafka_bootstrap) else "🔴 Inactive"
+        st.info(f"**Kafka Producer**\nStatus: {kafka_status}\nTopic: {kafka_topic}")
     
     with status_row[3]:
-        st.info(f"**Kafka Consumer**\nStatus: {'🟢 Consuming' if start_test else '🔴 Idle'}\nMessages: {len(st.session_state.latency_data)}")
+        consumer_status = "🟢 Consuming" if st.session_state.test_status == "running" else "🔴 Idle"
+        st.info(f"**Kafka Consumer**\nStatus: {consumer_status}\nMessages: {len(st.session_state.latency_data)}")
     
     # Recent messages
     if st.session_state.latency_data:
@@ -237,6 +294,8 @@ def render_latency_monitor_ui():
     with control_row[0]:
         if st.button("🔄 Clear Data"):
             st.session_state.latency_data = []
+            st.session_state.test_status = "idle"
+            st.session_state.test_progress = 0
             st.rerun()
     
     with control_row[1]:
@@ -255,19 +314,20 @@ def render_latency_monitor_ui():
         if st.button("⚙️ System Info"):
             st.json({
                 "tick_generator": {
+                    "volume": total_ticks,
                     "rate": tick_rate,
                     "symbols": tick_symbols,
-                    "status": "running" if start_test else "stopped"
+                    "status": st.session_state.test_status
                 },
                 "websocket": {
                     "host": ws_host,
                     "port": ws_port,
-                    "status": "connected" if start_test else "disconnected"
+                    "status": "connected" if check_websocket_status(ws_host, ws_port) else "disconnected"
                 },
                 "kafka": {
                     "bootstrap": kafka_bootstrap,
                     "topic": kafka_topic,
-                    "status": "active" if start_test else "inactive"
+                    "status": "active" if check_kafka_status(kafka_bootstrap) else "inactive"
                 }
             })
     
@@ -275,6 +335,107 @@ def render_latency_monitor_ui():
     if st.button("🔄 Refresh Data"):
         simulate_latency_data()
         st.rerun()
+
+def check_websocket_status(host, port):
+    """Check if WebSocket server is running"""
+    try:
+        import socket
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        result = sock.connect_ex((host, port))
+        sock.close()
+        return result == 0
+    except:
+        return False
+
+def check_kafka_status(bootstrap_servers):
+    """Check if Kafka is running"""
+    try:
+        import socket
+        host, port = bootstrap_servers.split(':')
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        result = sock.connect_ex((host, int(port)))
+        sock.close()
+        return result == 0
+    except:
+        return False
+
+def start_infrastructure():
+    """Start the infrastructure components"""
+    try:
+        result = subprocess.run(
+            ["docker-compose", "-f", "docker-compose.latency.yml", "up", "-d"],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            st.success("✅ Infrastructure started successfully!")
+        else:
+            st.error(f"❌ Failed to start infrastructure: {result.stderr}")
+    except Exception as e:
+        st.error(f"❌ Error starting infrastructure: {str(e)}")
+
+def stop_infrastructure():
+    """Stop the infrastructure components"""
+    try:
+        result = subprocess.run(
+            ["docker-compose", "-f", "docker-compose.latency.yml", "down"],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            st.success("✅ Infrastructure stopped successfully!")
+        else:
+            st.error(f"❌ Failed to stop infrastructure: {result.stderr}")
+    except Exception as e:
+        st.error(f"❌ Error stopping infrastructure: {str(e)}")
+
+def check_infrastructure_status():
+    """Check the status of infrastructure components"""
+    try:
+        result = subprocess.run(
+            ["docker-compose", "-f", "docker-compose.latency.yml", "ps"],
+            capture_output=True,
+            text=True
+        )
+        if result.returncode == 0:
+            st.info("📊 Infrastructure Status:")
+            st.code(result.stdout)
+        else:
+            st.error(f"❌ Failed to check status: {result.stderr}")
+    except Exception as e:
+        st.error(f"❌ Error checking status: {str(e)}")
+
+def generate_ticks(total_ticks, tick_rate, symbols):
+    """Generate the specified number of ticks"""
+    try:
+        # Set environment variables for the tick generator
+        env = os.environ.copy()
+        env['TICK_RATE'] = str(tick_rate)
+        env['SYMBOLS'] = ','.join(symbols)
+        
+        # Calculate how long to run the tick generator
+        duration = total_ticks / tick_rate if tick_rate > 0 else 0
+        
+        st.info(f"🚀 Starting tick generation: {total_ticks:,} ticks at {tick_rate} ticks/sec")
+        st.info(f"⏱️ Estimated duration: {duration:.1f} seconds")
+        
+        # Start the tick generator process
+        process = subprocess.Popen(
+            ["python3", "python_components/tick_generator.py"],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        
+        # Store the process for later termination
+        st.session_state.tick_process = process
+        st.session_state.test_status = "running"
+        st.session_state.test_progress = 0
+        
+        st.success("✅ Tick generation started!")
+        
+    except Exception as e:
+        st.error(f"❌ Error starting tick generation: {str(e)}")
 
 def simulate_latency_data():
     """Simulate latency data for demonstration"""

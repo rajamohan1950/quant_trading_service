@@ -1,1 +1,99 @@
- 
+version: '3.8'
+
+services:
+  # Zookeeper for Kafka
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    ports:
+      - "2181:2181"
+    volumes:
+      - zookeeper-data:/var/lib/zookeeper/data
+      - zookeeper-logs:/var/lib/zookeeper/log
+
+  # Kafka Broker
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "9101:9101"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: 'zookeeper:2181'
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      KAFKA_JMX_PORT: 9101
+      KAFKA_JMX_HOSTNAME: localhost
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+      KAFKA_DELETE_TOPIC_ENABLE: 'true'
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+
+  # WebSocket Server (Rust)
+  websocket-server:
+    build:
+      context: ./rust_components/websocket_server
+      dockerfile: Dockerfile
+    container_name: websocket-server
+    ports:
+      - "8080:8080"
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_TOPIC=tick-data
+      - WS_HOST=0.0.0.0
+      - WS_PORT=8080
+    depends_on:
+      - kafka
+    networks:
+      - latency-network
+
+  # Kafka Consumer (Rust)
+  kafka-consumer:
+    build:
+      context: ./rust_components/kafka_consumer
+      dockerfile: Dockerfile
+    container_name: kafka-consumer
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+      - KAFKA_TOPIC=tick-data
+      - CONSUMER_GROUP_ID=latency-monitor-group
+    depends_on:
+      - kafka
+    networks:
+      - latency-network
+
+  # Tick Generator (Rust)
+  tick-generator:
+    build:
+      context: ./rust_components/tick_generator
+      dockerfile: Dockerfile
+    container_name: tick-generator
+    environment:
+      - WS_HOST=websocket-server
+      - WS_PORT=8080
+      - TICK_RATE=1000
+      - SYMBOLS=NIFTY,BANKNIFTY,RELIANCE,TCS
+    depends_on:
+      - websocket-server
+    networks:
+      - latency-network
+
+volumes:
+  zookeeper-data:
+  zookeeper-logs:
+  kafka-data:
+
+networks:
+  latency-network:
+    driver: bridge 

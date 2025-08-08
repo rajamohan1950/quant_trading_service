@@ -1,0 +1,4 @@
+websockets==11.0.3
+kafka-python==2.0.2
+asyncio
+uuid 
