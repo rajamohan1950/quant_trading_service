@@ -14,41 +14,43 @@ import requests
 import subprocess
 import os
 import requests
+import statistics
 
 def render_latency_monitor_ui():
-    """Render the latency monitoring UI page"""
+    """Render the latency monitor UI"""
     
-    st.header("📊 Tick Generator & Latency Monitor")
-    st.markdown("---")
+    st.title("⚡ Latency Monitor")
+    st.markdown("Monitor real-time tick data latency through WebSocket and Kafka pipeline")
     
-    # Sidebar controls
-    with st.sidebar:
-        st.subheader("🎛️ Configuration")
-        
-        # Tick Generator Settings
-        st.markdown("**Tick Generator Settings**")
-        
-        # Tick volume selection
+    # Initialize session state
+    if 'latency_data' not in st.session_state:
+        st.session_state.latency_data = []
+    if 'test_running' not in st.session_state:
+        st.session_state.test_running = False
+    
+    # Configuration Section
+    st.markdown("### 📋 Configuration")
+    
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        # Tick volume selection (simplified)
         tick_volume = st.selectbox(
             "Tick Volume",
-            ["1K", "10K", "100K", "1M", "10M", "Custom"],
-            index=4  # Default to 10M
+            ["100", "500", "1000"],
+            index=2  # Default to 1000
         )
         
-        if tick_volume == "Custom":
-            custom_volume = st.number_input("Custom Volume", 1000, 100000000, 10000000)
-            total_ticks = custom_volume
-        else:
-            volume_map = {
-                "1K": 1000,
-                "10K": 10000,
-                "100K": 100000,
-                "1M": 1000000,
-                "10M": 10000000
-            }
-            total_ticks = volume_map[tick_volume]
+        volume_map = {
+            "100": 100,
+            "500": 500,
+            "1000": 1000
+        }
+        total_ticks = volume_map[tick_volume]
         
-        tick_rate = st.slider("Tick Rate (ticks/sec)", 1, 10000, 1000)
+        tick_rate = st.slider("Tick Rate (ticks/sec)", 1, 1000, 100)
+        
+    with col2:
         tick_symbols = st.multiselect(
             "Symbols to Generate",
             ["NIFTY", "BANKNIFTY", "RELIANCE", "TCS", "INFY", "HDFC", "ICICIBANK", "WIPRO", "HCLTECH", "TATAMOTORS"],
@@ -56,285 +58,128 @@ def render_latency_monitor_ui():
         )
         
         # WebSocket Settings
-        st.markdown("**WebSocket Settings**")
         ws_host = st.text_input("WebSocket Host", "localhost")
         ws_port = st.number_input("WebSocket Port", 8080, 9000, 8080)
-        
-        # Kafka Settings
-        st.markdown("**Kafka Settings**")
+    
+    # Kafka Settings
+    st.markdown("### 🔧 Infrastructure Settings")
+    col1, col2 = st.columns(2)
+    
+    with col1:
         kafka_bootstrap = st.text_input("Kafka Bootstrap Servers", "localhost:9092")
         kafka_topic = st.text_input("Kafka Topic", "tick-data")
-        
-        # Test Duration
-        estimated_duration = total_ticks / tick_rate if tick_rate > 0 else 0
-        st.info(f"**Estimated Duration**: {estimated_duration:.1f} seconds ({estimated_duration/60:.1f} minutes)")
-        
-        # Control buttons
-        col1, col2 = st.columns(2)
-        with col1:
-            start_test = st.button("🚀 Start Test")
-        with col2:
-            stop_test = st.button("⏹️ Stop Test")
-        
+    
+    with col2:
         # Infrastructure controls
-        st.markdown("**Infrastructure Controls**")
         if st.button("🏗️ Start Infrastructure"):
             start_infrastructure()
+            st.success("✅ Infrastructure started!")
         
         if st.button("🛑 Stop Infrastructure"):
             stop_infrastructure()
-        
-        if st.button("📊 Check Status"):
-            check_infrastructure_status()
-        
-        # Real-time tick generation
-        st.markdown("**Real-time Tick Generation**")
-        if st.button("🎯 Generate 10M Ticks"):
+            st.success("✅ Infrastructure stopped!")
+    
+    # Test Duration
+    estimated_duration = total_ticks / tick_rate if tick_rate > 0 else 0
+    st.info(f"**Estimated Duration**: {estimated_duration:.1f} seconds")
+    
+    # Control buttons
+    st.markdown("### 🎯 Test Controls")
+    col1, col2 = st.columns(2)
+    
+    with col1:
+        if st.button("🚀 Start Test", disabled=st.session_state.test_running):
+            st.session_state.test_running = True
+            st.session_state.test_start_time = time.time()
+            st.session_state.latency_data = []  # Clear previous data
+            
+            # Start the tick generation
             generate_ticks(total_ticks, tick_rate, tick_symbols)
+            st.success("✅ Test started! Generating ticks...")
     
-    # Main content area
-    st.subheader("📈 Real-time Latency Metrics")
+    with col2:
+        if st.button("⏹️ End Test", disabled=not st.session_state.test_running):
+            st.session_state.test_running = False
+            st.session_state.test_end_time = time.time()
+            
+            # Stop any running processes
+            if 'tick_process' in st.session_state:
+                try:
+                    st.session_state.tick_process.terminate()
+                    st.session_state.tick_process.wait(timeout=5)
+                except:
+                    pass
+            
+            st.success("✅ Test stopped! Analyzing results...")
     
-    # Latency metrics display
-    if 'latency_data' not in st.session_state:
-        st.session_state.latency_data = []
+    # Simulation button for testing
+    if st.button("🧪 Simulate Data (for testing)"):
+        simulate_latency_data()
+        st.rerun()
     
-    if 'test_status' not in st.session_state:
-        st.session_state.test_status = "idle"
-    
-    if 'test_progress' not in st.session_state:
-        st.session_state.test_progress = 0
-    
-    # Create metrics containers - using rows instead of nested columns
-    st.markdown("**Latency Metrics**")
-    
-    # Row 1: Metrics
-    metric_row1 = st.columns(4)
-    
-    with metric_row1[0]:
-        st.metric(
-            "Tick Generator → WS",
-            f"{np.mean([d['t1'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms",
-            delta=f"{np.std([d['t1'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms"
-        )
-    
-    with metric_row1[1]:
-        st.metric(
-            "WS → Kafka Producer",
-            f"{np.mean([d['t2'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms",
-            delta=f"{np.std([d['t2'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms"
-        )
-    
-    with metric_row1[2]:
-        st.metric(
-            "Kafka Producer → Consumer",
-            f"{np.mean([d['t3'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms",
-            delta=f"{np.std([d['t3'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms"
-        )
-    
-    with metric_row1[3]:
-        st.metric(
-            "End-to-End Latency",
-            f"{np.mean([d['total'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms",
-            delta=f"{np.std([d['total'] for d in st.session_state.latency_data]) if st.session_state.latency_data else 0:.2f}ms"
-        )
-    
-    # Test progress
-    if st.session_state.test_status == "running":
-        progress = st.progress(st.session_state.test_progress / total_ticks)
-        st.info(f"🔄 Test Progress: {st.session_state.test_progress:,} / {total_ticks:,} ticks ({st.session_state.test_progress/total_ticks*100:.1f}%)")
-    
-    # Latency chart
-    if st.session_state.latency_data:
-        df = pd.DataFrame(st.session_state.latency_data)
-        df['timestamp'] = pd.to_datetime(df['timestamp'])
+    # Status display
+    if st.session_state.test_running:
+        st.markdown("### 📊 Test Status")
+        st.info("🟢 **Test Running** - Generating ticks and collecting latency data...")
         
-        fig = go.Figure()
-        
-        fig.add_trace(go.Scatter(
-            x=df['timestamp'],
-            y=df['t1'],
-            mode='lines+markers',
-            name='Tick Generator → WS',
-            line=dict(color='blue')
-        ))
-        
-        fig.add_trace(go.Scatter(
-            x=df['timestamp'],
-            y=df['t2'],
-            mode='lines+markers',
-            name='WS → Kafka Producer',
-            line=dict(color='green')
-        ))
-        
-        fig.add_trace(go.Scatter(
-            x=df['timestamp'],
-            y=df['t3'],
-            mode='lines+markers',
-            name='Kafka Producer → Consumer',
-            line=dict(color='orange')
-        ))
-        
-        fig.add_trace(go.Scatter(
-            x=df['timestamp'],
-            y=df['total'],
-            mode='lines+markers',
-            name='End-to-End',
-            line=dict(color='red', width=3)
-        ))
-        
-        fig.update_layout(
-            title="Real-time Latency Monitoring",
-            xaxis_title="Time",
-            yaxis_title="Latency (ms)",
-            height=400
-        )
-        
-        st.plotly_chart(fig)
+        # Progress bar
+        if 'test_start_time' in st.session_state:
+            elapsed = time.time() - st.session_state.test_start_time
+            progress = min(elapsed / estimated_duration, 1.0) if estimated_duration > 0 else 0
+            st.progress(progress)
+            st.write(f"⏱️ Elapsed: {elapsed:.1f}s / {estimated_duration:.1f}s")
     
-    # Statistics section
-    st.subheader("📊 Statistics")
-    
-    if st.session_state.latency_data:
-        df = pd.DataFrame(st.session_state.latency_data)
+    # Results display
+    if not st.session_state.test_running and len(st.session_state.latency_data) > 0:
+        st.markdown("### 📈 Test Results")
         
-        # Summary statistics
-        st.markdown("**Latency Summary (ms)**")
-        
-        stats_data = {
-            'Metric': ['Tick→WS', 'WS→Kafka', 'Kafka→Consumer', 'End-to-End'],
-            'Mean': [
-                df['t1'].mean(),
-                df['t2'].mean(),
-                df['t3'].mean(),
-                df['total'].mean()
-            ],
-            'Std': [
-                df['t1'].std(),
-                df['t2'].std(),
-                df['t3'].std(),
-                df['total'].std()
-            ],
-            'Min': [
-                df['t1'].min(),
-                df['t2'].min(),
-                df['t3'].min(),
-                df['total'].min()
-            ],
-            'Max': [
-                df['t1'].max(),
-                df['t2'].max(),
-                df['t3'].max(),
-                df['total'].max()
-            ]
-        }
-        
-        stats_df = pd.DataFrame(stats_data)
-        st.dataframe(stats_df)
-        
-        # Percentile chart
-        percentiles = [50, 75, 90, 95, 99]
-        percentile_data = {
-            'Percentile': percentiles,
-            'Tick→WS': [df['t1'].quantile(p/100) for p in percentiles],
-            'WS→Kafka': [df['t2'].quantile(p/100) for p in percentiles],
-            'Kafka→Consumer': [df['t3'].quantile(p/100) for p in percentiles],
-            'End-to-End': [df['total'].quantile(p/100) for p in percentiles]
-        }
-        
-        percentile_df = pd.DataFrame(percentile_data)
-        
-        fig_pct = px.bar(
-            percentile_df,
-            x='Percentile',
-            y=['Tick→WS', 'WS→Kafka', 'Kafka→Consumer', 'End-to-End'],
-            title="Latency Percentiles",
-            barmode='group'
-        )
-        
-        st.plotly_chart(fig_pct)
-    
-    # System status
-    st.subheader("🔧 System Status")
-    
-    status_row = st.columns(4)
-    
-    with status_row[0]:
-        status_color = "🟢" if st.session_state.test_status == "running" else "🔴"
-        st.info(f"**Tick Generator**\nStatus: {status_color} {st.session_state.test_status.title()}\nRate: {tick_rate} ticks/sec\nVolume: {total_ticks:,}")
-    
-    with status_row[1]:
-        ws_status = "🟢 Connected" if check_websocket_status(ws_host, ws_port) else "🔴 Disconnected"
-        st.info(f"**WebSocket Server**\nStatus: {ws_status}\nPort: {ws_port}")
-    
-    with status_row[2]:
-        kafka_status = "🟢 Active" if check_kafka_status(kafka_bootstrap) else "🔴 Inactive"
-        st.info(f"**Kafka Producer**\nStatus: {kafka_status}\nTopic: {kafka_topic}")
-    
-    with status_row[3]:
-        consumer_status = "🟢 Consuming" if st.session_state.test_status == "running" else "🔴 Idle"
-        st.info(f"**Kafka Consumer**\nStatus: {consumer_status}\nMessages: {len(st.session_state.latency_data)}")
-    
-    # Recent messages
-    if st.session_state.latency_data:
-        st.subheader("📝 Recent Messages")
-        
-        recent_df = pd.DataFrame(st.session_state.latency_data[-10:])
-        recent_df['timestamp'] = pd.to_datetime(recent_df['timestamp']).dt.strftime('%H:%M:%S.%f')
-        
-        st.dataframe(
-            recent_df[['timestamp', 'symbol', 'price', 't1', 't2', 't3', 'total']]
-        )
-    
-    # Control panel
-    st.subheader("🎮 Control Panel")
-    
-    control_row = st.columns(3)
-    
-    with control_row[0]:
-        if st.button("🔄 Clear Data"):
-            st.session_state.latency_data = []
-            st.session_state.test_status = "idle"
-            st.session_state.test_progress = 0
-            st.rerun()
-    
-    with control_row[1]:
-        if st.button("📊 Export Data"):
-            if st.session_state.latency_data:
-                df_export = pd.DataFrame(st.session_state.latency_data)
-                csv = df_export.to_csv(index=False)
+        # Calculate statistics
+        if st.session_state.latency_data:
+            t1_values = [d['t1'] for d in st.session_state.latency_data]
+            t2_values = [d['t2'] for d in st.session_state.latency_data]
+            t3_values = [d['t3'] for d in st.session_state.latency_data]
+            total_values = [d['total'] for d in st.session_state.latency_data]
+            
+            # Display metrics
+            col1, col2, col3, col4 = st.columns(4)
+            
+            with col1:
+                st.metric("T1 (Tick→WS)", f"{statistics.mean(t1_values):.2f}ms", f"±{statistics.stdev(t1_values):.2f}ms")
+            
+            with col2:
+                st.metric("T2 (WS→Kafka)", f"{statistics.mean(t2_values):.2f}ms", f"±{statistics.stdev(t2_values):.2f}ms")
+            
+            with col3:
+                st.metric("T3 (Kafka→Consumer)", f"{statistics.mean(t3_values):.2f}ms", f"±{statistics.stdev(t3_values):.2f}ms")
+            
+            with col4:
+                st.metric("Total Latency", f"{statistics.mean(total_values):.2f}ms", f"±{statistics.stdev(total_values):.2f}ms")
+            
+            # Display data table
+            st.markdown("### 📋 Raw Data")
+            df = pd.DataFrame(st.session_state.latency_data)
+            st.dataframe(df)
+            
+            # Export button
+            if st.button("📥 Export Results"):
+                csv = df.to_csv(index=False)
                 st.download_button(
-                    label="📥 Download CSV",
+                    label="Download CSV",
                     data=csv,
-                    file_name=f"latency_data_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    file_name=f"latency_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                     mime="text/csv"
                 )
     
-    with control_row[2]:
-        if st.button("⚙️ System Info"):
-            st.json({
-                "tick_generator": {
-                    "volume": total_ticks,
-                    "rate": tick_rate,
-                    "symbols": tick_symbols,
-                    "status": st.session_state.test_status
-                },
-                "websocket": {
-                    "host": ws_host,
-                    "port": ws_port,
-                    "status": "connected" if check_websocket_status(ws_host, ws_port) else "disconnected"
-                },
-                "kafka": {
-                    "bootstrap": kafka_bootstrap,
-                    "topic": kafka_topic,
-                    "status": "active" if check_kafka_status(kafka_bootstrap) else "inactive"
-                }
-            })
-    
-    # Auto-refresh for real-time updates
-    if st.button("🔄 Refresh Data"):
-        simulate_latency_data()
-        st.rerun()
+    # Clear data button
+    if st.button("🗑️ Clear All Data"):
+        st.session_state.latency_data = []
+        st.session_state.test_running = False
+        if 'tick_process' in st.session_state:
+            try:
+                st.session_state.tick_process.terminate()
+            except:
+                pass
+        st.success("✅ All data cleared!")
 
 def check_websocket_status(host, port):
     """Check if WebSocket server is running"""
@@ -406,12 +251,18 @@ def check_infrastructure_status():
         st.error(f"❌ Error checking status: {str(e)}")
 
 def generate_ticks(total_ticks, tick_rate, symbols):
-    """Generate the specified number of ticks"""
+    """Generate the specified number of ticks (max 1000)"""
     try:
+        # Enforce 1000 tick limit
+        if total_ticks > 1000:
+            st.warning(f"⚠️ Limiting tick generation to 1000 (requested: {total_ticks:,})")
+            total_ticks = 1000
+        
         # Set environment variables for the tick generator
         env = os.environ.copy()
         env['TICK_RATE'] = str(tick_rate)
         env['SYMBOLS'] = ','.join(symbols)
+        env['TOTAL_TICKS'] = str(total_ticks)  # Add total ticks limit
         
         # Calculate how long to run the tick generator
         duration = total_ticks / tick_rate if tick_rate > 0 else 0
@@ -429,13 +280,12 @@ def generate_ticks(total_ticks, tick_rate, symbols):
         
         # Store the process for later termination
         st.session_state.tick_process = process
-        st.session_state.test_status = "running"
-        st.session_state.test_progress = 0
         
         st.success("✅ Tick generation started!")
         
     except Exception as e:
         st.error(f"❌ Error starting tick generation: {str(e)}")
+        st.error("💡 Make sure the WebSocket server and Kafka are running!")
 
 def simulate_latency_data():
     """Simulate latency data for demonstration"""
@@ -447,7 +297,7 @@ def simulate_latency_data():
     # Simulate new tick data
     symbols = ["NIFTY", "BANKNIFTY", "RELIANCE", "TCS"]
     
-    for _ in range(5):  # Generate 5 new ticks
+    for _ in range(10):  # Generate 10 new ticks
         tick_data = {
             'timestamp': datetime.now().isoformat(),
             'symbol': random.choice(symbols),
@@ -462,4 +312,6 @@ def simulate_latency_data():
     
     # Keep only last 1000 records
     if len(st.session_state.latency_data) > 1000:
-        st.session_state.latency_data = st.session_state.latency_data[-1000:] 
+        st.session_state.latency_data = st.session_state.latency_data[-1000:]
+    
+    st.success("✅ Simulated 10 latency data points!") 

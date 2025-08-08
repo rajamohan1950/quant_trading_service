@@ -23,6 +23,7 @@ WS_HOST = os.getenv('WS_HOST', 'localhost')
 WS_PORT = int(os.getenv('WS_PORT', 8080))
 TICK_RATE = int(os.getenv('TICK_RATE', 1000))  # ticks per second
 SYMBOLS = os.getenv('SYMBOLS', 'NIFTY,BANKNIFTY,RELIANCE,TCS').split(',')
+TOTAL_TICKS = int(os.getenv('TOTAL_TICKS', 1000))  # maximum ticks to generate
 
 # Market data simulation
 symbol_prices = {
@@ -89,6 +90,7 @@ async def tick_generator():
     logger.info("🚀 Starting Tick Generator...")
     logger.info(f"📊 Target rate: {TICK_RATE} ticks/sec")
     logger.info(f"📈 Symbols: {', '.join(SYMBOLS)}")
+    logger.info(f"🎯 Total ticks limit: {TOTAL_TICKS:,}")
     
     # Calculate delay between ticks
     delay = 1.0 / TICK_RATE if TICK_RATE > 0 else 1.0
@@ -104,18 +106,21 @@ async def tick_generator():
             tick_count = 0
             start_time = time.time()
             
-            while True:
+            while tick_count < TOTAL_TICKS:
                 try:
                     # Send tick for each symbol
                     for symbol in SYMBOLS:
+                        if tick_count >= TOTAL_TICKS:
+                            break
+                            
                         await send_tick_data(websocket, symbol)
                         tick_count += 1
                         
-                        # Log progress every 1000 ticks
-                        if tick_count % 1000 == 0:
+                        # Log progress every 100 ticks
+                        if tick_count % 100 == 0:
                             elapsed = time.time() - start_time
                             rate = tick_count / elapsed
-                            logger.info(f"📈 Generated {tick_count} ticks (rate: {rate:.1f} ticks/sec)")
+                            logger.info(f"📈 Generated {tick_count}/{TOTAL_TICKS} ticks (rate: {rate:.1f} ticks/sec)")
                     
                     # Wait before next batch
                     await asyncio.sleep(delay)
@@ -126,6 +131,11 @@ async def tick_generator():
                 except Exception as e:
                     logger.error(f"❌ Error in tick generation: {e}")
                     await asyncio.sleep(1)  # Wait before retrying
+            
+            # Final statistics
+            elapsed = time.time() - start_time
+            rate = tick_count / elapsed if elapsed > 0 else 0
+            logger.info(f"🎉 Completed: {tick_count}/{TOTAL_TICKS} ticks in {elapsed:.1f}s (avg rate: {rate:.1f} ticks/sec)")
                     
     except Exception as e:
         logger.error(f"❌ Failed to connect to WebSocket: {e}")
