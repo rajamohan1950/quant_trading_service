@@ -56,7 +56,7 @@ def generate_tick_data(symbol):
         'symbol': symbol,
         'price': round(new_price, 2),
         'volume': random.randint(100, 10000),
-        'timestamp': datetime.now().isoformat(),
+        'tick_generated_at': datetime.now().isoformat(),  # Fixed timestamp field name
         'bid': round(new_price * 0.999, 2),
         'ask': round(new_price * 1.001, 2),
         'spread': round(new_price * 0.002, 2),

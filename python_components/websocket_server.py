@@ -59,42 +59,37 @@ async def handle_tick_data(websocket):
                 if producer:
                     future = producer.send(
                         KAFKA_TOPIC,
-                        value=tick_data,
-                        key=tick_data.get('symbol', 'unknown')
+                        value=tick_data  # Send dict directly, let serializer handle conversion
                     )
                     
-                    # Wait for the send to complete
-                    record_metadata = future.get(timeout=10)
-                    tick_data['kafka_sent_at'] = datetime.now().isoformat()
+                    # Get the result to confirm successful send
+                    record_metadata = future.get(timeout=1)
                     
-                    logger.info(f"📤 Sent tick to Kafka: {tick_data['symbol']} @ {tick_data['price']}")
+                    logger.info(f"📤 Sent tick to Kafka: {tick_data.get('symbol')} @ {tick_data.get('price')}")
                     
-                    # Send acknowledgment back to client
-                    ack = {
+                    # Send confirmation back to client
+                    confirmation = {
                         'status': 'success',
-                        'message': 'Tick data sent to Kafka',
-                        'kafka_topic': KAFKA_TOPIC,
-                        'kafka_partition': record_metadata.partition,
-                        'kafka_offset': record_metadata.offset,
-                        'timestamp': datetime.now().isoformat()
+                        'partition': record_metadata.partition,
+                        'offset': record_metadata.offset,
+                        'symbol': tick_data.get('symbol'),
+                        'price': tick_data.get('price')
                     }
-                    await websocket.send(json.dumps(ack))
+                    await websocket.send(json.dumps(confirmation))
                     
                 else:
                     logger.error("❌ Kafka producer not initialized")
-                    error_ack = {
+                    error_msg = {
                         'status': 'error',
-                        'message': 'Kafka producer not available',
-                        'timestamp': datetime.now().isoformat()
+                        'message': 'Kafka producer not available'
                     }
-                    await websocket.send(json.dumps(error_ack))
+                    await websocket.send(json.dumps(error_msg))
                     
             except json.JSONDecodeError as e:
                 logger.error(f"❌ Invalid JSON received: {e}")
                 error_msg = {
                     'status': 'error',
-                    'message': 'Invalid JSON format',
-                    'timestamp': datetime.now().isoformat()
+                    'message': f'Invalid JSON: {str(e)}'
                 }
                 await websocket.send(json.dumps(error_msg))
                 
@@ -102,15 +97,17 @@ async def handle_tick_data(websocket):
                 logger.error(f"❌ Error processing tick data: {e}")
                 error_msg = {
                     'status': 'error',
-                    'message': f'Processing error: {str(e)}',
-                    'timestamp': datetime.now().isoformat()
+                    'message': f'Processing error: {str(e)}'
                 }
-                await websocket.send(json.dumps(error_msg))
-                
+                try:
+                    await websocket.send(json.dumps(error_msg))
+                except:
+                    pass  # Connection might be closed
+                    
     except websockets.exceptions.ConnectionClosed:
         logger.info(f"🔌 WebSocket connection closed: {client_id}")
     except Exception as e:
-        logger.error(f"❌ WebSocket error: {e}")
+        logger.error(f"❌ WebSocket error for {client_id}: {e}")
 
 async def main():
     """Main function to start the WebSocket server"""

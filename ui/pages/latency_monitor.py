@@ -16,161 +16,208 @@ import os
 import requests
 import statistics
 
+# Function to load latency data from file
+def load_latency_data():
+    """Load latency data from the JSON file created by Kafka consumer"""
+    try:
+        import json
+        import os
+        
+        latency_file = 'latency_data.json'
+        if os.path.exists(latency_file):
+            with open(latency_file, 'r') as f:
+                data = json.load(f)
+            return data
+        return []
+    except Exception as e:
+        st.error(f"❌ Error loading latency data: {e}")
+        return []
+
 def render_latency_monitor_ui():
-    """Render the latency monitor UI"""
-    
-    st.title("⚡ Latency Monitor")
-    st.markdown("Monitor real-time tick data latency through WebSocket and Kafka pipeline")
+    """Render the Tick Generator & Latency Monitor UI"""
+    st.title("⚡ Tick Generator & Latency Monitor")
+    st.markdown("---")
     
     # Initialize session state
     if 'latency_data' not in st.session_state:
         st.session_state.latency_data = []
     if 'test_running' not in st.session_state:
         st.session_state.test_running = False
+    if 'tick_process' not in st.session_state:
+        st.session_state.tick_process = None
+    if 'auto_refresh' not in st.session_state:
+        st.session_state.auto_refresh = False
+    if 'test_start_time' not in st.session_state:
+        st.session_state.test_start_time = None
+    if 'test_end_time' not in st.session_state:
+        st.session_state.test_end_time = None
     
-    # Configuration Section
-    st.markdown("### 📋 Configuration")
+    # Load real latency data from file
+    file_latency_data = load_latency_data()
     
-    col1, col2 = st.columns(2)
+    # Sidebar configuration
+    st.sidebar.header("⚙️ Configuration")
+    
+    # Tick Generation Settings
+    st.sidebar.subheader("🎯 Tick Generation")
+    tick_volume = st.sidebar.selectbox("Tick Volume", ["100", "500", "1000", "Custom"])
+    
+    if tick_volume == "Custom":
+        custom_volume = st.sidebar.number_input("Custom Volume", min_value=1, max_value=1000, value=100)
+        total_ticks = min(custom_volume, 1000)  # Enforce limit
+        if custom_volume > 1000:
+            st.sidebar.warning("⚠️ Limited to 1000 ticks max")
+    else:
+        total_ticks = int(tick_volume)
+    
+    tick_rate = st.sidebar.slider("Tick Rate (ticks/sec)", min_value=1, max_value=1000, value=100)
+    
+    # Symbol selection
+    symbols = st.sidebar.multiselect(
+        "Symbols",
+        ["NIFTY", "BANKNIFTY", "RELIANCE", "TCS", "HDFC", "ICICI"],
+        default=["NIFTY", "TCS"]
+    )
+    
+    # WebSocket/Kafka Settings
+    st.sidebar.subheader("🔧 Infrastructure")
+    ws_host = st.sidebar.text_input("WebSocket Host", value="localhost")
+    ws_port = st.sidebar.number_input("WebSocket Port", value=8080)
+    kafka_host = st.sidebar.text_input("Kafka Host", value="localhost:9092")
+    
+    # System Status
+    st.sidebar.subheader("📊 System Status")
+    ws_status = check_websocket_status(ws_host, ws_port)
+    kafka_status = check_kafka_status(kafka_host)
+    
+    st.sidebar.write(f"🔌 WebSocket: {'✅ Connected' if ws_status else '❌ Disconnected'}")
+    st.sidebar.write(f"📊 Kafka: {'✅ Connected' if kafka_status else '❌ Disconnected'}")
+    
+    # Infrastructure Controls
+    st.sidebar.subheader("🏗️ Infrastructure Controls")
+    col1, col2 = st.sidebar.columns(2)
     
     with col1:
-        # Tick volume selection (simplified)
-        tick_volume = st.selectbox(
-            "Tick Volume",
-            ["100", "500", "1000"],
-            index=2  # Default to 1000
-        )
-        
-        volume_map = {
-            "100": 100,
-            "500": 500,
-            "1000": 1000
-        }
-        total_ticks = volume_map[tick_volume]
-        
-        tick_rate = st.slider("Tick Rate (ticks/sec)", 1, 1000, 100)
-        
-    with col2:
-        tick_symbols = st.multiselect(
-            "Symbols to Generate",
-            ["NIFTY", "BANKNIFTY", "RELIANCE", "TCS", "INFY", "HDFC", "ICICIBANK", "WIPRO", "HCLTECH", "TATAMOTORS"],
-            default=["NIFTY", "BANKNIFTY", "RELIANCE", "TCS"]
-        )
-        
-        # WebSocket Settings
-        ws_host = st.text_input("WebSocket Host", "localhost")
-        ws_port = st.number_input("WebSocket Port", 8080, 9000, 8080)
-    
-    # Kafka Settings
-    st.markdown("### 🔧 Infrastructure Settings")
-    col1, col2 = st.columns(2)
-    
-    with col1:
-        kafka_bootstrap = st.text_input("Kafka Bootstrap Servers", "localhost:9092")
-        kafka_topic = st.text_input("Kafka Topic", "tick-data")
-    
-    with col2:
-        # Infrastructure controls
         if st.button("🏗️ Start Infrastructure", key="start_infra_btn"):
             start_infrastructure()
             st.success("✅ Infrastructure started!")
-        
+    
+    with col2:
         if st.button("🛑 Stop Infrastructure", key="stop_infra_btn"):
             stop_infrastructure()
             st.success("✅ Infrastructure stopped!")
     
-    # Test Duration
-    estimated_duration = total_ticks / tick_rate if tick_rate > 0 else 0
-    st.info(f"**Estimated Duration**: {estimated_duration:.1f} seconds")
+    # Auto-refresh toggle
+    st.session_state.auto_refresh = st.sidebar.checkbox("🔄 Auto Refresh", value=st.session_state.auto_refresh)
     
-    # Control buttons
-    st.markdown("### 🎯 Test Controls")
-    col1, col2 = st.columns(2)
+    # Main content area
+    st.markdown("### 🚀 Test Controls")
+    
+    # Test control buttons
+    col1, col2, col3 = st.columns(3)
     
     with col1:
-        if st.button("🚀 Start Test", disabled=st.session_state.test_running, key="start_test_btn"):
-            st.session_state.test_running = True
-            st.session_state.test_start_time = time.time()
-            st.session_state.latency_data = []  # Clear previous data
-            
-            # Start the tick generation
-            generate_ticks(total_ticks, tick_rate, tick_symbols)
-            st.success("✅ Test started! Generating ticks...")
-    
+        start_test = st.button("🚀 Start Test", key="start_test_btn")
+        
     with col2:
-        if st.button("⏹️ End Test", disabled=not st.session_state.test_running, key="end_test_btn"):
-            st.session_state.test_running = False
-            st.session_state.test_end_time = time.time()
-            
-            # Stop any running processes
-            if 'tick_process' in st.session_state:
-                try:
-                    st.session_state.tick_process.terminate()
-                    st.session_state.tick_process.wait(timeout=5)
-                except:
-                    pass
-            
-            # Check if we have any data to analyze
-            if len(st.session_state.latency_data) > 0:
-                st.success("✅ Test stopped! Analyzing results...")
-            else:
-                st.warning("⚠️ Test stopped! No latency data collected.")
-                st.info("💡 Make sure infrastructure is running and try again.")
+        end_test = st.button("⏹️ End Test", key="end_test_btn")
+        
+    with col3:
+        simulate_test = st.button("🧪 Simulate Data", key="simulate_data_btn")
     
-    # Simulation button for testing
-    if st.button("🧪 Simulate Data (for testing)", key="simulate_data_btn"):
-        simulate_latency_data()
+    # Handle test controls
+    if start_test and not st.session_state.test_running:
+        st.session_state.test_running = True
+        st.session_state.test_start_time = time.time()
+        st.session_state.test_end_time = None
+        # Clear old data
+        st.session_state.latency_data = []
+        
+        # Start tick generation
+        generate_ticks(total_ticks, tick_rate, symbols)
+        st.success("✅ Test started! Generating ticks...")
         st.rerun()
     
-    # Status display
+    if end_test and st.session_state.test_running:
+        st.session_state.test_running = False
+        st.session_state.test_end_time = time.time()
+        
+        # Stop tick generation process
+        if st.session_state.tick_process:
+            try:
+                st.session_state.tick_process.terminate()
+                st.session_state.tick_process = None
+            except:
+                pass
+        
+        # Load final latency data
+        st.session_state.latency_data = file_latency_data
+        
+        if len(st.session_state.latency_data) == 0:
+            st.warning("⚠️ Test stopped! No latency data collected.")
+            st.info("💡 Make sure infrastructure is running and try again.")
+        else:
+            st.success(f"✅ Test completed! {len(st.session_state.latency_data)} data points collected.")
+        
+        st.rerun()
+    
+    if simulate_test:
+        simulate_latency_data()
+        st.success("✅ Simulated data generated!")
+        st.rerun()
+    
+    # Real-time data loading during test
     if st.session_state.test_running:
-        st.markdown("### 📊 Test Status")
-        st.info("🟢 **Test Running** - Generating ticks and collecting latency data...")
+        # Update latency data from file
+        st.session_state.latency_data = file_latency_data
         
-        # Progress bar
-        if 'test_start_time' in st.session_state:
+        st.markdown("### 📊 Test Progress")
+        
+        # Show test status
+        if st.session_state.test_start_time:
             elapsed = time.time() - st.session_state.test_start_time
-            progress = min(elapsed / estimated_duration, 1.0) if estimated_duration > 0 else 0
-            st.progress(progress)
-            st.write(f"⏱️ Elapsed: {elapsed:.1f}s / {estimated_duration:.1f}s")
+            st.info(f"⏱️ Test running for {elapsed:.1f} seconds")
         
-        # Data collection status
         st.write(f"📊 Data Points Collected: {len(st.session_state.latency_data)}")
         
         if len(st.session_state.latency_data) == 0:
-            st.warning("⚠️ No latency data collected yet. Check if infrastructure is running.")
-    
-    # Show data collection status even when not running
-    elif len(st.session_state.latency_data) > 0:
-        st.markdown("### 📊 Data Status")
-        st.success(f"✅ {len(st.session_state.latency_data)} latency data points collected")
-        st.write(f"📈 Latest data: {st.session_state.latency_data[-1]['timestamp'] if st.session_state.latency_data else 'None'}")
-    
-    # Results display
-    if not st.session_state.test_running and len(st.session_state.latency_data) > 0:
-        st.markdown("### 📈 Test Results")
+            st.warning("⚠️ No data collected yet. Make sure infrastructure is running.")
+        else:
+            st.success(f"✅ Collecting data... Latest: {st.session_state.latency_data[-1]['timestamp'] if st.session_state.latency_data else 'N/A'}")
         
-        # Calculate statistics
-        if st.session_state.latency_data:
-            t1_values = [d['t1'] for d in st.session_state.latency_data]
-            t2_values = [d['t2'] for d in st.session_state.latency_data]
-            t3_values = [d['t3'] for d in st.session_state.latency_data]
-            total_values = [d['total'] for d in st.session_state.latency_data]
-            
-            # Display metrics
+        # Auto-refresh
+        if st.session_state.auto_refresh:
+            time.sleep(1)
+            st.rerun()
+    
+    # Display results when test is complete or data exists
+    if not st.session_state.test_running and len(file_latency_data) > 0:
+        # Use file data for display
+        st.session_state.latency_data = file_latency_data
+        
+        st.markdown("### 📈 Latency Analysis")
+        
+        # Extract latency values
+        t1_values = [d['t1_latency_ms'] for d in st.session_state.latency_data]
+        t2_values = [d['t2_latency_ms'] for d in st.session_state.latency_data]
+        t3_values = [d['t3_latency_ms'] for d in st.session_state.latency_data]
+        total_values = [d['total_latency_ms'] for d in st.session_state.latency_data]
+        
+        if t1_values and t2_values and t3_values and total_values:
+            # Latency metrics
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
-                st.metric("T1 (Tick→WS)", f"{statistics.mean(t1_values):.2f}ms", f"±{statistics.stdev(t1_values):.2f}ms")
+                st.metric("T1 (Tick→WebSocket)", f"{statistics.mean(t1_values):.2f}ms", f"±{statistics.stdev(t1_values):.2f}ms" if len(t1_values) > 1 else "")
             
             with col2:
-                st.metric("T2 (WS→Kafka)", f"{statistics.mean(t2_values):.2f}ms", f"±{statistics.stdev(t2_values):.2f}ms")
+                st.metric("T2 (WebSocket Process)", f"{statistics.mean(t2_values):.2f}ms", f"±{statistics.stdev(t2_values):.2f}ms" if len(t2_values) > 1 else "")
             
             with col3:
-                st.metric("T3 (Kafka→Consumer)", f"{statistics.mean(t3_values):.2f}ms", f"±{statistics.stdev(t3_values):.2f}ms")
+                st.metric("T3 (Kafka→Consumer)", f"{statistics.mean(t3_values):.2f}ms", f"±{statistics.stdev(t3_values):.2f}ms" if len(t3_values) > 1 else "")
             
             with col4:
-                st.metric("Total Latency", f"{statistics.mean(total_values):.2f}ms", f"±{statistics.stdev(total_values):.2f}ms")
+                st.metric("Total Latency", f"{statistics.mean(total_values):.2f}ms", f"±{statistics.stdev(total_values):.2f}ms" if len(total_values) > 1 else "")
             
             # Display data table
             st.markdown("### 📋 Raw Data")
@@ -219,13 +266,15 @@ def render_latency_monitor_ui():
     # Clear data button
     if st.button("🗑️ Clear All Data", key="clear_data_btn"):
         st.session_state.latency_data = []
-        st.session_state.test_running = False
-        if 'tick_process' in st.session_state:
-            try:
-                st.session_state.tick_process.terminate()
-            except:
-                pass
+        # Also clear the file
+        try:
+            import os
+            if os.path.exists('latency_data.json'):
+                os.remove('latency_data.json')
+        except:
+            pass
         st.success("✅ All data cleared!")
+        st.rerun()
 
 def check_websocket_status(host, port):
     """Check if WebSocket server is running"""
