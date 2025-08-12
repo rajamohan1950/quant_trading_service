@@ -65,9 +65,9 @@ fi
 print_success "Branch is up to date with remote"
 
 # Verify version number
-VERSION=$(cat VERSION)
+VERSION=$(cat VERSION | tr -d ' ')
 if [ "$VERSION" != "2.0.0" ]; then
-    print_error "Version file does not contain 2.0.0. Current version: $VERSION"
+    print_error "Version file does not contain 2.0.0. Current version: '$VERSION'"
     exit 1
 fi
 
