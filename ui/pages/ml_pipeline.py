@@ -222,7 +222,7 @@ def render_live_inference_tab(ml_pipeline):
             # Load recent tick data from database
             query = """
                 SELECT * FROM tick_data
-                WHERE tick_generated_at >= date_add('hour', -1, now())
+                WHERE tick_generated_at >= now() - INTERVAL '1 hour'
                 ORDER BY tick_generated_at DESC
                 LIMIT 100
             """
@@ -274,7 +274,7 @@ def render_model_performance_tab(ml_pipeline):
                 # Load test data from database
                 query = """
                     SELECT * FROM tick_data 
-                    WHERE tick_generated_at >= date_add('hour', -24, now())
+                    WHERE tick_generated_at >= now() - INTERVAL '24 hours'
                     ORDER BY tick_generated_at DESC 
                     LIMIT 1000
                 """
