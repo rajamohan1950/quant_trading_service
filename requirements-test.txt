@@ -1,0 +1,71 @@
+# Test dependencies for ML Pipeline UI
+pytest>=7.0.0
+pytest-cov>=4.0.0
+pytest-mock>=3.10.0
+pytest-xdist>=3.0.0
+pytest-timeout>=2.1.0
+pytest-html>=3.1.0
+pytest-json-report>=1.5.0
+
+# Mocking and testing utilities
+unittest-mock>=1.0.0
+freezegun>=1.2.0
+responses>=0.23.0
+httpx>=0.24.0
+
+# Performance testing
+psutil>=5.9.0
+memory-profiler>=0.60.0
+
+# Data validation
+pandas>=1.5.0
+numpy>=1.21.0
+
+# Streamlit testing
+streamlit>=1.25.0
+
+# Code coverage
+coverage>=7.0.0
+codecov>=2.1.0
+
+# Linting and formatting
+flake8>=6.0.0
+black>=23.0.0
+isort>=5.12.0
+
+# Type checking
+mypy>=1.0.0
+types-requests>=2.28.0
+
+# Documentation testing
+doctest-ignore-unicode>=0.1.2
+
+# Benchmarking
+pytest-benchmark>=4.0.0
+
+# Parallel testing
+pytest-parallel>=0.1.0
+
+# Test reporting
+pytest-html>=3.1.0
+pytest-json-report>=1.5.0
+allure-pytest>=2.13.0
+
+# Database testing
+pytest-django>=4.5.0
+pytest-sqlalchemy>=0.5.0
+
+# API testing
+pytest-httpx>=0.4.0
+pytest-mock-resources>=2.0.0
+
+# Environment management
+python-dotenv>=1.0.0
+pytest-env>=1.0.0
+
+# Debugging
+pytest-pdb>=0.2.0
+pytest-sugar>=0.9.0
+
+# CI/CD testing
+pytest-github-actions-annotate-failures>=0.1.0 

@@ -36,6 +36,7 @@ class DemoModelAdapter(BaseModelAdapter):
         """Load the demo model (always succeeds)"""
         logger.info("🎭 Loading demo model")
         self.is_loaded = True
+        self.model = "demo_rule_based_model"  # Set a dummy model object
         return True
     
     def predict(self, features: pd.DataFrame) -> ModelPrediction:

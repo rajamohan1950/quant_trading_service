@@ -314,12 +314,15 @@ class TradingFeatureEngineer:
                 features['market_session'] = timestamps.dt.hour.apply(self._get_market_session)
                 
                 # Time since market open (assuming 9:30 AM open)
-                market_open = timestamps.dt.replace(hour=9, minute=30, second=0, microsecond=0)
-                features['time_since_open'] = (timestamps - market_open).dt.total_seconds() / 3600
+                # Use a more compatible approach without dt.replace
+                features['time_since_open'] = timestamps.apply(
+                    lambda x: (x - x.replace(hour=9, minute=30, second=0, microsecond=0)).total_seconds() / 3600
+                )
                 
                 # Time to market close (assuming 4:00 PM close)
-                market_close = timestamps.dt.replace(hour=16, minute=0, second=0, microsecond=0)
-                features['time_to_close'] = (market_close - timestamps).dt.total_seconds() / 3600
+                features['time_to_close'] = timestamps.apply(
+                    lambda x: (x.replace(hour=16, minute=0, second=0, microsecond=0) - x).total_seconds() / 3600
+                )
             else:
                 # Create dummy time features
                 features['hour'] = np.random.randint(9, 16, len(tick_data))
