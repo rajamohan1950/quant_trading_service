@@ -9,7 +9,7 @@ from ui.pages.view import render_view_ui
 from ui.pages.backtest import render_backtest_ui
 from ui.pages.admin import render_admin_ui
 from ui.pages.strategies import render_strategies_ui
-from ui.pages.ml_pipeline import render_ml_pipeline_ui
+from ui.pages.production_ml_pipeline import render_production_ml_pipeline_ui
 import os
 
 def main():
@@ -41,7 +41,7 @@ def main():
         render_backtest_ui()
 
     with tab4:
-        render_ml_pipeline_ui()
+        render_production_ml_pipeline_ui()
 
     with tab5:
         def show_coverage_report():

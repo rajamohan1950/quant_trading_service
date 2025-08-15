@@ -1,0 +1,191 @@
+version: '3.8'
+
+services:
+  # Main ML Trading Application
+  ml-trading-app:
+    build: .
+    container_name: ml-trading-app
+    ports:
+      - "8501:8501"
+    environment:
+      - PYTHONPATH=/app
+      - DB_FILE=/app/data/stock_data.duckdb
+      - MODEL_DIR=/app/ml_models
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./ml_models:/app/ml_models
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - trading-network
+    depends_on:
+      - redis
+      - postgres
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8501/_stcore/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Redis for caching and real-time data
+  redis:
+    image: redis:7-alpine
+    container_name: trading-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - trading-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  # PostgreSQL for structured data storage
+  postgres:
+    image: postgres:15-alpine
+    container_name: trading-postgres
+    environment:
+      POSTGRES_DB: trading_system
+      POSTGRES_USER: trading_user
+      POSTGRES_PASSWORD: trading_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    networks:
+      - trading-network
+    restart: unless-stopped
+
+  # ML Model Training Service
+  ml-training:
+    build: .
+    container_name: ml-training-service
+    command: ["python", "ml_service/production_lightgbm_trainer.py"]
+    environment:
+      - PYTHONPATH=/app
+      - MODEL_DIR=/app/ml_models
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./ml_models:/app/ml_models
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - trading-network
+    depends_on:
+      - postgres
+      - redis
+    restart: "no"  # Only run when needed
+    profiles:
+      - training
+
+  # Data Ingestion Service
+  data-ingestion:
+    build: .
+    container_name: data-ingestion-service
+    command: ["python", "data/ingestion.py"]
+    environment:
+      - PYTHONPATH=/app
+      - DB_FILE=/app/data/stock_data.duckdb
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - trading-network
+    depends_on:
+      - postgres
+      - redis
+    restart: "no"  # Only run when needed
+    profiles:
+      - ingestion
+
+  # Feature Engineering Service
+  feature-engineering:
+    build: .
+    container_name: feature-engineering-service
+    command: ["python", "ml_service/production_feature_engineer.py"]
+    environment:
+      - PYTHONPATH=/app
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    networks:
+      - trading-network
+    restart: "no"  # Only run when needed
+    profiles:
+      - feature-eng
+
+  # Performance Monitoring Service
+  monitoring:
+    image: prom/prometheus:latest
+    container_name: trading-monitoring
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - trading-network
+    restart: unless-stopped
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+
+  # Grafana for Visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: trading-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+    networks:
+      - trading-network
+    restart: unless-stopped
+    depends_on:
+      - monitoring
+
+  # Nginx Reverse Proxy
+  nginx:
+    image: nginx:alpine
+    container_name: trading-nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/nginx.conf
+      - ./nginx/ssl:/etc/nginx/ssl
+    networks:
+      - trading-network
+    depends_on:
+      - ml-trading-app
+    restart: unless-stopped
+
+volumes:
+  redis_data:
+    driver: local
+  postgres_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  trading-network:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

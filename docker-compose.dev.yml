@@ -1,0 +1,118 @@
+version: '3.8'
+
+services:
+  # Development ML Trading Application with hot reload
+  ml-trading-app-dev:
+    build: 
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: ml-trading-app-dev
+    ports:
+      - "8501:8501"
+      - "5678:5678"  # Debug port
+    environment:
+      - PYTHONPATH=/app
+      - DB_FILE=/app/data/stock_data.duckdb
+      - MODEL_DIR=/app/ml_models
+      - LOG_LEVEL=DEBUG
+      - ENVIRONMENT=development
+    volumes:
+      - .:/app
+      - /app/.venv  # Exclude virtual environment
+      - /app/__pycache__
+      - /app/.pytest_cache
+    networks:
+      - trading-network-dev
+    depends_on:
+      - redis-dev
+      - postgres-dev
+    restart: unless-stopped
+    command: ["python", "-m", "streamlit", "run", "app.py", "--server.port=8501", "--server.address=0.0.0.0", "--server.runOnSave=true"]
+
+  # Development Redis
+  redis-dev:
+    image: redis:7-alpine
+    container_name: trading-redis-dev
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_dev_data:/data
+    networks:
+      - trading-network-dev
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  # Development PostgreSQL
+  postgres-dev:
+    image: postgres:15-alpine
+    container_name: trading-postgres-dev
+    environment:
+      POSTGRES_DB: trading_system_dev
+      POSTGRES_USER: trading_user
+      POSTGRES_PASSWORD: trading_password
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    networks:
+      - trading-network-dev
+    restart: unless-stopped
+
+  # Development ML Training Service
+  ml-training-dev:
+    build: 
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: ml-training-service-dev
+    command: ["python", "-m", "pytest", "tests/", "-v", "--tb=short"]
+    environment:
+      - PYTHONPATH=/app
+      - MODEL_DIR=/app/ml_models
+      - LOG_LEVEL=DEBUG
+      - ENVIRONMENT=development
+    volumes:
+      - .:/app
+      - /app/.venv
+    networks:
+      - trading-network-dev
+    depends_on:
+      - postgres-dev
+      - redis-dev
+    restart: "no"
+    profiles:
+      - testing
+
+  # Jupyter Notebook for ML Development
+  jupyter:
+    build: 
+      context: .
+      dockerfile: Dockerfile.dev
+    container_name: ml-jupyter
+    ports:
+      - "8888:8888"
+    environment:
+      - PYTHONPATH=/app
+      - JUPYTER_ENABLE_LAB=yes
+    volumes:
+      - .:/app
+      - /app/.venv
+    networks:
+      - trading-network-dev
+    restart: unless-stopped
+    command: ["jupyter", "lab", "--ip=0.0.0.0", "--port=8888", "--no-browser", "--allow-root", "--NotebookApp.token=''"]
+    profiles:
+      - jupyter
+
+volumes:
+  redis_dev_data:
+    driver: local
+  postgres_dev_data:
+    driver: local
+
+networks:
+  trading-network-dev:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16

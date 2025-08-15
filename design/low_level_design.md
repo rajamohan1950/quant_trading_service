@@ -311,6 +311,12 @@ KITE_API_KEY = os.getenv('KITE_API_KEY')
 KITE_API_SECRET = os.getenv('KITE_API_SECRET')
 KITE_ACCESS_TOKEN = os.getenv('KITE_ACCESS_TOKEN')
 
+
+
+
+
+
+
 # Target symbols for data fetching
 TARGET_SYMBOLS = ['ZOMATO', 'ETERNAL', 'SWIGGY']
 
