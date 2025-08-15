@@ -192,4 +192,4 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 
-tick_data.db
+# tick_data.db

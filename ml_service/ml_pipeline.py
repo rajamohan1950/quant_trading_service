@@ -11,9 +11,16 @@ import json
 import os
 from datetime import datetime
 from typing import Dict, List, Tuple, Optional, Any
-from kafka import KafkaConsumer, KafkaProducer
-import asyncio
 import duckdb
+
+# Optional Kafka imports
+try:
+    from kafka import KafkaConsumer, KafkaProducer
+    KAFKA_AVAILABLE = True
+    logging.info("✅ Kafka modules imported successfully")
+except ImportError:
+    KAFKA_AVAILABLE = False
+    logging.info("⚠️ Kafka modules not available, running without Kafka support")
 
 # Use absolute imports instead of relative imports
 from ml_service.base_model import BaseModelAdapter, ModelPrediction
@@ -36,8 +43,15 @@ class MLPipelineService:
     """Main ML pipeline service for trading signals"""
     
     def __init__(self, model_dir: str = "ml_models/", 
-                 db_file: str = "tick_data.db",
+                 db_file: str = None,
                  kafka_bootstrap_servers: str = "localhost:9092"):
+        # Use configured database file if not specified
+        if db_file is None:
+            try:
+                from core.settings import DB_FILE
+                db_file = DB_FILE
+            except ImportError:
+                db_file = "stock_data.duckdb"  # fallback
         self.model_dir = model_dir
         self.db_file = db_file
         self.kafka_bootstrap_servers = kafka_bootstrap_servers
@@ -85,14 +99,21 @@ class MLPipelineService:
             # Always add demo model
             try:
                 demo_model = DemoModelAdapter("demo_trading_model", "demo_model_path")
-                self.models["demo_trading_model"] = demo_model
-                loaded_models["demo_trading_model"] = {
-                    'type': 'Demo',
-                    'features': demo_model.get_supported_features(),
-                    'status': 'Loaded'
-                }
-                logger.info("✅ Demo model loaded successfully")
-                logger.info(f"📊 Demo model features: {demo_model.get_supported_features()}")
+                
+                # Actually load the demo model
+                if demo_model.load_model():
+                    self.models["demo_trading_model"] = demo_model
+                    loaded_models["demo_trading_model"] = {
+                        'type': 'Demo',
+                        'features': demo_model.get_supported_features(),
+                        'status': 'Loaded'
+                    }
+                    logger.info("✅ Demo model loaded successfully")
+                    logger.info(f"📊 Demo model features: {demo_model.get_supported_features()}")
+                else:
+                    logger.error("❌ Failed to load demo model")
+                    return {}
+                    
             except Exception as e:
                 logger.error(f"❌ Failed to load demo model: {e}")
                 return {}

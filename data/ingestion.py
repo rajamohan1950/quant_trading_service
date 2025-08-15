@@ -1,6 +1,6 @@
 import pandas as pd
 import streamlit as st
-from database import get_db_connection, log_fetch
+from core.database import get_db_connection, log_fetch
 
 def fetch_and_store_data(kite, instrument_token, tradingsymbol, from_date, to_date, interval):
     """Fetches data from Kite Connect and stores it in DuckDB."""

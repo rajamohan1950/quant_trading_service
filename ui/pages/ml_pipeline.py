@@ -21,6 +21,100 @@ sys.path.append('ml_service')
 from ml_service.ml_pipeline import MLPipelineService
 from ml_service.trading_features import TradingFeatureEngineer
 
+def generate_realistic_sample_data(rows=1000, price_range=(50.0, 200.0), volatility=2.0):
+    """Generate realistic sample tick data for testing"""
+    import numpy as np
+    import pandas as pd
+    from datetime import datetime, timedelta
+    
+    # Input validation
+    if rows <= 0:
+        raise ValueError("Rows must be positive")
+    if price_range[0] >= price_range[1]:
+        raise ValueError("Price range min must be less than max")
+    if volatility < 0:
+        raise ValueError("Volatility must be non-negative")
+    
+    # Generate base price series with realistic movement
+    base_price = np.random.uniform(price_range[0], price_range[1])
+    prices = [base_price]
+    
+    for i in range(1, rows):
+        # Add random walk with volatility
+        change = np.random.normal(0, volatility / 100)
+        new_price = prices[-1] * (1 + change)
+        new_price = max(price_range[0] * 0.5, min(price_range[1] * 1.5, new_price))
+        prices.append(new_price)
+    
+    # Generate realistic bid/ask spreads
+    spreads = np.random.uniform(0.01, 0.1, rows)
+    bids = [p - s/2 for p, s in zip(prices, spreads)]
+    asks = [p + s/2 for p, s in zip(prices, spreads)]
+    
+    # Generate volume data
+    volumes = np.random.randint(100, 10000, rows)
+    
+    # Generate order book data
+    bid_qty1 = np.random.randint(100, 1000, rows)
+    ask_qty1 = np.random.randint(100, 1000, rows)
+    bid_qty2 = np.random.randint(200, 2000, rows)
+    ask_qty2 = np.random.randint(200, 2000, rows)
+    
+    # Generate timestamps
+    start_time = datetime.now() - timedelta(hours=rows//60)
+    timestamps = [start_time + timedelta(minutes=i) for i in range(rows)]
+    
+    # Create DataFrame
+    data = pd.DataFrame({
+        'price': prices,
+        'volume': volumes,
+        'bid': bids,
+        'ask': asks,
+        'bid_qty1': bid_qty1,
+        'ask_qty1': ask_qty1,
+        'bid_qty2': bid_qty2,
+        'ask_qty2': ask_qty2,
+        'tick_generated_at': timestamps,
+        'symbol': 'SAMPLE'
+    })
+    
+    return data
+
+def categorize_features(features):
+    """Categorize features into logical groups"""
+    categories = {
+        'Price Momentum': 0,
+        'Volume Momentum': 0,
+        'Spread Analysis': 0,
+        'Bid-Ask Imbalance': 0,
+        'VWAP Deviation': 0,
+        'Technical Indicators': 0,
+        'Time Features': 0,
+        'Other': 0
+    }
+    
+    for feature in features:
+        if 'momentum' in feature.lower():
+            if 'price' in feature.lower():
+                categories['Price Momentum'] += 1
+            elif 'volume' in feature.lower():
+                categories['Volume Momentum'] += 1
+        elif 'spread' in feature.lower():
+            categories['Spread Analysis'] += 1
+        elif 'imbalance' in feature.lower():
+            categories['Bid-Ask Imbalance'] += 1
+        elif 'vwap' in feature.lower():
+            categories['VWAP Deviation'] += 1
+        elif any(indicator in feature.lower() for indicator in ['rsi', 'macd', 'bollinger', 'stochastic', 'williams', 'atr']):
+            categories['Technical Indicators'] += 1
+        elif any(time_feature in feature.lower() for time_feature in ['hour', 'minute', 'time', 'session']):
+            categories['Time Features'] += 1
+        else:
+            categories['Other'] += 1
+    
+    # Remove categories with 0 features
+    return {k: v for k, v in categories.items() if v > 0}
+
 def render_ml_pipeline_ui():
     """Render the ML Pipeline UI"""
     st.title("🤖 ML Pipeline - Trading Signals")
@@ -73,7 +167,7 @@ def render_ml_pipeline_ui():
             if st.button("🔄 Switch Model", key="switch_model_btn"):
                 if ml_pipeline.set_active_model(selected_model):
                     st.success(f"✅ Switched to {selected_model}")
-                    st.rerun()
+                    st.experimental_rerun()
                 else:
                     st.error("❌ Failed to switch model")
         else:
@@ -183,6 +277,17 @@ def render_live_inference_tab(ml_pipeline):
                         st.metric("Edge Score", f"{prediction.edge_score:.3f}")
                         st.metric("Position Size", f"{signal.get('position_size', 0):.1%}")
                     
+                    # Display inference timing with microsecond precision
+                    if 'inference_time' in result:
+                        inference_time = result['inference_time']
+                        if isinstance(inference_time, (int, float)):
+                            # Convert to microseconds if in seconds
+                            if inference_time < 1:
+                                micro_time = inference_time * 1000000
+                                st.metric("Inference Time", f"{micro_time:.2f} μs")
+                            else:
+                                st.metric("Inference Time", f"{inference_time:.6f}s")
+                    
                     # Display detailed signal information
                     st.subheader("📋 Trading Signal Details")
                     
@@ -199,21 +304,21 @@ def render_live_inference_tab(ml_pipeline):
                     }
                     
                     signal_df = pd.DataFrame(list(signal_info.items()), columns=['Property', 'Value'])
-                    st.dataframe(signal_df, use_container_width=True)
+                    st.dataframe(signal_df)
                     
                     # Feature values
                     if 'feature_values' in signal:
                         st.write("**Key Feature Values:**")
                         feature_df = pd.DataFrame(list(signal['feature_values'].items()), 
                                                 columns=['Feature', 'Value'])
-                        st.dataframe(feature_df, use_container_width=True)
+                        st.dataframe(feature_df)
                     
                     # Probabilities
                     st.write("**Prediction Probabilities:**")
                     prob_df = pd.DataFrame(list(prediction.probabilities.items()), 
                                          columns=['Class', 'Probability'])
                     prob_df['Probability'] = prob_df['Probability'].apply(lambda x: f"{x:.1%}")
-                    st.dataframe(prob_df, use_container_width=True)
+                    st.dataframe(prob_df)
                     
                     # Store result in session state for other tabs
                     st.session_state.last_inference_result = result
@@ -248,7 +353,7 @@ def render_live_inference_tab(ml_pipeline):
                 
                 # Display sample
                 st.write("**Recent Tick Data Sample:**")
-                st.dataframe(recent_ticks.head(10), use_container_width=True)
+                st.dataframe(recent_ticks.head(10))
                 
                 # Store for inference
                 st.session_state.recent_ticks = recent_ticks
@@ -283,38 +388,125 @@ def render_model_performance_tab(ml_pipeline):
         key="eval_model_select"
     )
     
+    # Data source selection
+    st.subheader("📊 Test Data Source")
+    data_source = st.radio(
+        "Choose data source:",
+        ["Database (if available)", "Generate Sample Data"],
+        key="data_source_radio"
+    )
+    
+    if data_source == "Generate Sample Data":
+        # Sample data generation controls
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            sample_rows = st.number_input(
+                "Number of Rows:",
+                min_value=100,
+                max_value=10000,
+                value=1000,
+                step=100,
+                key="sample_rows_input"
+            )
+        
+        with col2:
+            price_range = st.slider(
+                "Price Range ($):",
+                min_value=10.0,
+                max_value=1000.0,
+                value=(50.0, 200.0),
+                step=10.0,
+                key="price_range_slider"
+            )
+        
+        with col3:
+            volatility = st.slider(
+                "Volatility (%):",
+                min_value=0.1,
+                max_value=10.0,
+                value=2.0,
+                step=0.1,
+                key="volatility_slider"
+            )
+        
+        # Generate sample data button
+        if st.button("🔧 Generate Sample Data", key="generate_sample_data_btn"):
+            with st.spinner("🔄 Generating sample data..."):
+                try:
+                    # Generate realistic sample data
+                    sample_data = generate_realistic_sample_data(
+                        rows=sample_rows,
+                        price_range=price_range,
+                        volatility=volatility
+                    )
+                    
+                    st.success(f"✅ Generated {len(sample_data)} sample records")
+                    st.session_state.sample_test_data = sample_data
+                    
+                    # Show sample preview
+                    st.write("**Sample Data Preview:**")
+                    st.dataframe(sample_data.head(10))
+                    
+                except Exception as e:
+                    st.error(f"❌ Error generating sample data: {e}")
+    
+    # Evaluation button
     if st.button("📈 Evaluate Model Performance", key="eval_model_btn"):
         with st.spinner("🔄 Evaluating model performance..."):
             try:
-                # Check if database is connected
-                if not ml_pipeline.db_conn:
-                    st.error("❌ Database not connected. Please check the configuration.")
-                    return
-                    
-                # Load test data from database
-                query = """
-                    SELECT * FROM tick_data 
-                    WHERE tick_generated_at >= now() - INTERVAL '24 hours'
-                    ORDER BY tick_generated_at DESC 
-                    LIMIT 1000
-                """
-                test_data = ml_pipeline.db_conn.execute(query).fetchdf()
+                test_data = None
                 
-                if not test_data.empty:
+                if data_source == "Database (if available)" and ml_pipeline.db_conn:
+                    # Try to load from database
+                    query = """
+                        SELECT * FROM tick_data 
+                        WHERE tick_generated_at >= now() - INTERVAL '24 hours'
+                        ORDER BY tick_generated_at DESC 
+                        LIMIT 1000
+                    """
+                    test_data = ml_pipeline.db_conn.execute(query).fetchdf()
+                    
+                    if test_data.empty:
+                        st.warning("⚠️ No database data available. Please generate sample data instead.")
+                        return
+                elif data_source == "Generate Sample Data":
+                    # Use generated sample data
+                    if 'sample_test_data' in st.session_state:
+                        test_data = st.session_state.sample_test_data
+                    else:
+                        st.error("❌ Please generate sample data first")
+                        return
+                
+                if test_data is not None and not test_data.empty:
                     # Process test data with features and labels
                     feature_engineer = TradingFeatureEngineer()
                     processed_data = feature_engineer.process_tick_data(test_data, create_labels=True)
                     
                     if not processed_data.empty and 'trading_label_encoded' in processed_data.columns:
-                        # Evaluate model
-                        evaluation_result = ml_pipeline.evaluate_model_performance(
-                            model_to_evaluate, processed_data
-                        )
+                        # For model evaluation, we need only the features (not labels)
+                        # The model expects exactly 26 features
+                        feature_columns = [col for col in processed_data.columns 
+                                         if col not in ['trading_label', 'trading_label_encoded']]
+                        
+                        # Ensure we have exactly 26 features for the model
+                        if len(feature_columns) == 26:
+                            # Prepare data for evaluation (features only)
+                            features_for_evaluation = processed_data[feature_columns].copy()
+                            
+                            # Evaluate model
+                            evaluation_result = ml_pipeline.evaluate_model_performance(
+                                model_to_evaluate, processed_data
+                            )
+                        else:
+                            st.error(f"❌ Feature mismatch: Expected 26 features, got {len(feature_columns)}")
+                            st.info("ℹ️ This usually happens when the feature engineering process changes")
+                            return
                         
                         if 'error' not in evaluation_result:
                             st.success("✅ Model evaluation completed!")
                             
-                            # Display metrics
+                            # Display metrics with microsecond precision
                             col1, col2, col3 = st.columns(3)
                             
                             with col1:
@@ -356,7 +548,7 @@ def render_model_performance_tab(ml_pipeline):
                                     title="Top 15 Most Important Features"
                                 )
                                 fig.update_layout(height=600)
-                                st.plotly_chart(fig, use_container_width=True)
+                                st.plotly_chart(fig)
                             else:
                                 st.warning("⚠️ No feature importance data available")
                             
@@ -384,7 +576,7 @@ def render_model_performance_tab(ml_pipeline):
                                 else:
                                     return 'background-color: #f8d7da'  # Red
                             
-                            styled_metrics = detailed_metrics.style.applymap(
+                            styled_metrics = detailed_metrics.style.map(
                                 color_f1_score, subset=['F1-Score']
                             ).format({
                                 'Precision': '{:.3f}',
@@ -392,7 +584,7 @@ def render_model_performance_tab(ml_pipeline):
                                 'F1-Score': '{:.3f}'
                             })
                             
-                            st.dataframe(styled_metrics, use_container_width=True)
+                            st.dataframe(styled_metrics)
                             
                             # Metrics interpretation
                             st.subheader("📈 Metrics Interpretation")
@@ -449,7 +641,7 @@ def render_model_performance_tab(ml_pipeline):
                                 y=['HOLD', 'BUY', 'SELL'],
                                 title="Confusion Matrix"
                             )
-                            st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig)
                             
                             # Store evaluation result
                             st.session_state.last_evaluation = evaluation_result
@@ -480,12 +672,75 @@ def render_model_performance_tab(ml_pipeline):
         with col4:
             st.metric("PR-AUC", f"{evaluation['metrics']['pr_auc']:.3f}")
         
-        # Evaluation timestamp
-        st.caption(f"Evaluation performed at: {evaluation['evaluation_timestamp']}")
+        # Evaluation timestamp with microsecond precision
+        evaluation_time = evaluation.get('evaluation_timestamp', 'Unknown')
+        if evaluation_time != 'Unknown':
+            try:
+                # Parse and format with microsecond precision
+                dt = datetime.fromisoformat(evaluation_time.replace('Z', '+00:00'))
+                formatted_time = dt.strftime('%Y-%m-%d %H:%M:%S.%f')[:-3]  # Include milliseconds
+                st.caption(f"Evaluation performed at: {formatted_time}")
+            except:
+                st.caption(f"Evaluation performed at: {evaluation_time}")
+        else:
+            st.caption(f"Evaluation performed at: {evaluation_time}")
 
 def render_feature_analysis_tab(ml_pipeline):
     """Render the feature analysis tab"""
     st.header("🔍 Feature Engineering & Analysis")
+    
+    # Model features overview
+    st.subheader("🤖 Model Features Overview")
+    
+    if ml_pipeline.active_model:
+        active_model = ml_pipeline.active_model
+        supported_features = active_model.get_supported_features()
+        
+        if supported_features:
+            st.success(f"✅ Active model supports {len(supported_features)} features")
+            
+            # Display all features the model is using
+            col1, col2 = st.columns([2, 1])
+            
+            with col1:
+                st.write("**All Model Features:**")
+                features_df = pd.DataFrame({
+                    'Feature Name': supported_features,
+                    'Feature Index': range(len(supported_features))
+                })
+                st.dataframe(features_df)
+            
+            with col2:
+                st.write("**Feature Categories:**")
+                feature_categories = categorize_features(supported_features)
+                for category, count in feature_categories.items():
+                    st.metric(category, count)
+            
+            # Feature importance visualization (if available)
+            if hasattr(active_model, 'get_feature_importance') and callable(getattr(active_model, 'get_feature_importance')):
+                try:
+                    feature_importance = active_model.get_feature_importance()
+                    if feature_importance:
+                        st.subheader("📊 Feature Importance (Model)")
+                        
+                        # Top features
+                        top_features = dict(sorted(feature_importance.items(), 
+                                                  key=lambda x: x[1], reverse=True)[:20])
+                        
+                        fig = px.bar(
+                            x=list(top_features.values()),
+                            y=list(top_features.keys()),
+                            orientation='h',
+                            title="Top 20 Most Important Features"
+                        )
+                        fig.update_layout(height=600)
+                        st.plotly_chart(fig)
+                except Exception as e:
+                    st.info(f"ℹ️ Feature importance not available: {e}")
+        else:
+            st.warning("⚠️ Active model has no feature information")
+    else:
+        st.warning("⚠️ No active model selected")
     
     # Feature engineering parameters
     st.subheader("⚙️ Feature Engineering Parameters")
@@ -525,24 +780,53 @@ def render_feature_analysis_tab(ml_pipeline):
             key="feature_labels"
         )
     
+    # Sample data generation for feature analysis
+    st.subheader("📊 Sample Data Generation for Feature Analysis")
+    
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        analysis_rows = st.number_input(
+            "Number of Rows:",
+            min_value=100,
+            max_value=5000,
+            value=500,
+            step=100,
+            key="analysis_rows_input"
+        )
+    
+    with col2:
+        analysis_price_range = st.slider(
+            "Price Range ($):",
+            min_value=10.0,
+            max_value=1000.0,
+            value=(50.0, 200.0),
+            step=10.0,
+            key="analysis_price_range_slider"
+        )
+    
+    with col3:
+        analysis_volatility = st.slider(
+            "Volatility (%):",
+            min_value=0.1,
+            max_value=10.0,
+            value=2.0,
+            step=0.1,
+            key="analysis_volatility_slider"
+        )
+    
     # Feature engineering demo
     if st.button("🔧 Generate Sample Features", key="generate_features_btn"):
         try:
-            # Create sample data
-            sample_data = pd.DataFrame({
-                'price': np.random.uniform(100, 200, 100),
-                'volume': np.random.randint(100, 10000, 100),
-                'bid': np.random.uniform(99, 199, 100),
-                'ask': np.random.uniform(101, 201, 100),
-                'bid_qty1': np.random.randint(100, 1000, 100),
-                'ask_qty1': np.random.randint(100, 1000, 100),
-                'bid_qty2': np.random.randint(200, 2000, 100),
-                'ask_qty2': np.random.randint(200, 2000, 100),
-                'tick_generated_at': pd.date_range(start='2024-01-01', periods=100, freq='1min')
-            })
+            # Create sample data using the parameters
+            sample_data = generate_realistic_sample_data(
+                rows=analysis_rows,
+                price_range=analysis_price_range,
+                volatility=analysis_volatility
+            )
             
             # Initialize feature engineer with selected parameters
-            feature_engineer = TradingFeatureEngineer(lookback_periods=lookback_periods)
+            feature_engineer = TradingFeatureEngineer()
             
             with st.spinner("🔄 Generating features..."):
                 # Process data
@@ -596,7 +880,7 @@ def render_feature_analysis_tab(ml_pipeline):
                                 )
                             
                             fig.update_layout(height=200*len(selected_features), showlegend=False)
-                            st.plotly_chart(fig, use_container_width=True)
+                            st.plotly_chart(fig)
                     
                     # Store processed data
                     st.session_state.sample_features = processed_data
@@ -614,7 +898,7 @@ def render_feature_analysis_tab(ml_pipeline):
         
         # Show first few rows
         st.write("**First 10 rows:**")
-        st.dataframe(sample_features.head(10), use_container_width=True)
+        st.dataframe(sample_features.head(10))
         
         # Feature correlation matrix
         st.subheader("🔗 Feature Correlations")
@@ -631,7 +915,7 @@ def render_feature_analysis_tab(ml_pipeline):
                 aspect="auto",
                 title="Feature Correlation Matrix"
             )
-            st.plotly_chart(fig, use_container_width=True)
+            st.plotly_chart(fig)
 
 def render_configuration_tab(ml_pipeline):
     """Render the configuration tab"""
@@ -673,7 +957,7 @@ def render_configuration_tab(ml_pipeline):
                 st.write("**Model Parameters:**")
                 params_df = pd.DataFrame(list(active_info['model_parameters'].items()), 
                                        columns=['Parameter', 'Value'])
-                st.dataframe(params_df, use_container_width=True)
+                st.dataframe(params_df)
             
             # Supported features
             if 'supported_features' in active_info:
@@ -712,13 +996,24 @@ def render_configuration_tab(ml_pipeline):
         st.metric("Models Loaded", performance['models_loaded'])
     
     with col2:
-        st.metric("Avg Inference Time", f"{performance['avg_inference_time']:.4f}s")
+        st.metric("Avg Inference Time", f"{performance['avg_inference_time']:.6f}s")
         st.metric("Database Connected", "✅" if performance['database_connected'] else "❌")
     
     with col3:
         st.metric("Feature Engineer", "✅" if performance['feature_engineer_ready'] else "❌")
         if performance['last_inference']:
-            st.metric("Last Inference", performance['last_inference'][:19])
+            # Format with microsecond precision
+            try:
+                last_inference_time = performance['last_inference']
+                if isinstance(last_inference_time, str):
+                    # Try to parse and format with microsecond precision
+                    dt = datetime.fromisoformat(last_inference_time.replace('Z', '+00:00'))
+                    formatted_time = dt.strftime('%H:%M:%S.%f')[:-3]  # Include milliseconds
+                    st.metric("Last Inference", formatted_time)
+                else:
+                    st.metric("Last Inference", str(last_inference_time)[:19])
+            except:
+                st.metric("Last Inference", str(performance['last_inference'])[:19])
     
     # Pipeline actions
     st.subheader("🔄 Pipeline Actions")
@@ -731,7 +1026,7 @@ def render_configuration_tab(ml_pipeline):
                 try:
                     ml_pipeline.load_models()
                     st.success("✅ Models reloaded successfully!")
-                    st.rerun()
+                    st.experimental_rerun()
                 except Exception as e:
                     st.error(f"❌ Failed to reload models: {e}")
     
@@ -741,7 +1036,7 @@ def render_configuration_tab(ml_pipeline):
             ml_pipeline.avg_inference_time = 0.0
             ml_pipeline.last_inference_time = None
             st.success("✅ Performance metrics cleared!")
-            st.rerun()
+            st.experimental_rerun()
     
     # Export configuration
     st.subheader("📤 Export Configuration")
