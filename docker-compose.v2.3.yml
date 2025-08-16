@@ -73,13 +73,32 @@ services:
     networks:
       - b2c-network
 
+  # Feature Engineering Container
+  feature-engineering-container:
+    build:
+      context: ./containers/feature_engineering_container
+      dockerfile: Dockerfile
+    ports:
+      - "8505:8501"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - POSTGRES_URL=postgresql://user:pass@postgres:5432/quant_trading
+      - FEATURE_STORAGE_PATH=/app/features
+    volumes:
+      - ./ml_service:/app/ml_service
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - b2c-network
+
   # Training Pipeline Container
   training-pipeline-container:
     build:
       context: ./containers/training_pipeline_container
       dockerfile: Dockerfile
     ports:
-      - "8505:8501"
+      - "8506:8501"
     environment:
       - REDIS_URL=redis://redis:6379
       - POSTGRES_URL=postgresql://user:pass@postgres:5432/quant_trading
