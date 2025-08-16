@@ -1,65 +1,38 @@
 import streamlit as st
 st.set_page_config(page_title="Quant Trading Service", layout="wide")
-from core.database import setup_database
-from ui.pages.login import render_login_ui
-from ui.pages.ingestion import render_ingestion_ui
-from ui.pages.archive import render_archive_ui
-from ui.pages.management import render_management_ui
-from ui.pages.view import render_view_ui
-from ui.pages.backtest import render_backtest_ui
-from ui.pages.admin import render_admin_ui
-from ui.pages.strategies import render_strategies_ui
-from ui.pages.production_ml_pipeline import render_production_ml_pipeline_ui
+# from core.database import setup_database  # Removed - using PostgreSQL instead
+# from ui.pages.login import render_login_ui  # Removed - not needed for B2C
+# from ui.pages.ingestion import render_ingestion_ui  # Removed - not needed for B2C
+# from ui.pages.archive import render_archive_ui  # Removed - not needed for B2C
+# from ui.pages.management import render_management_ui  # Removed - not needed for B2C
+# from ui.pages.view import render_view_ui  # Removed - not needed for B2C
+# from ui.pages.backtest import render_backtest_ui  # Removed - not needed for B2C
+# from ui.pages.admin import render_admin_ui  # Removed - not needed for B2C
+# from ui.pages.strategies import render_strategies_ui  # Removed - not needed for B2C
+# from ui.pages.production_ml_pipeline import render_production_ml_pipeline_ui  # Removed - not needed for B2C
 from ui.pages.b2c_investor_simple import B2CInvestorPlatform
 import os
 
 def main():
     # --- Database Setup ---
-    if 'db_setup_done' not in st.session_state:
-        setup_database()
-        st.session_state['db_setup_done'] = True
+    # Database initialized via PostgreSQL connection
+    # if 'db_setup_done' not in st.session_state:
+    #     setup_database()  # Removed - using PostgreSQL instead
+    #     st.session_state['db_setup_done'] = True
 
     # --- UI Sections ---
-    render_login_ui()
-    render_admin_ui()
-    render_ingestion_ui()
-    render_archive_ui()
-    render_management_ui()
+    # render_login_ui()  # Removed - not needed for B2C
+    # render_admin_ui()  # Removed - not needed for B2C
+    # render_ingestion_ui()  # Removed - not needed for B2C
+    # render_archive_ui()  # Removed - not needed for B2C
+    # render_management_ui()  # Removed - not needed for B2C
 
     # Main content area
-    st.title("📊 Quant Trading Service")
+    st.title("💰 B2C Investment Platform")
 
-    # Create tabs for different sections
-    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📈 Strategies", "📊 Data View", "🔄 Legacy Backtest", "🤖 ML Pipeline", "💰 B2C Investment", "📋 Coverage Report"])
-
-    with tab1:
-        render_strategies_ui()
-
-    with tab2:
-        render_view_ui()
-
-    with tab3:
-        render_backtest_ui()
-
-    with tab4:
-        render_production_ml_pipeline_ui()
-
-    with tab5:
-        platform = B2CInvestorPlatform()
-        platform.main()
-
-    with tab6:
-        def show_coverage_report():
-            html_path = "coverage_html/index.html"
-            if os.path.exists(html_path):
-                with open(html_path, "r") as f:
-                    html = f.read()
-                st.header("Test Coverage Report")
-                st.components.v1.html(html, height=800, scrolling=True)
-            else:
-                st.info("No coverage report found. Run `pytest --cov=app --cov-report=html:coverage_html` to generate it.")
-
-        show_coverage_report()
+    # B2C Investment Platform - Clean and Simple
+    platform = B2CInvestorPlatform()
+    platform.main()
 
 if __name__ == "__main__":
     main()

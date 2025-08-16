@@ -10,7 +10,7 @@ import random
 from typing import Dict, List, Tuple
 import psycopg2
 import redis
-from prometheus_client import Counter, Histogram, start_http_server
+# from prometheus_client import Counter, Histogram, start_http_server  # Removed - not needed for B2C
 import sys
 import os
 import uuid
@@ -28,15 +28,15 @@ except ImportError:
     st.error("ML modules not available. Please ensure all dependencies are installed.")
     st.stop()
 
-# Initialize Prometheus metrics
-INFERENCE_COUNTER = Counter('b2c_inference_total', 'Total number of inferences')
-ORDER_COUNTER = Counter('b2c_orders_total', 'Total number of orders')
-PNL_HISTOGRAM = Histogram('b2c_pnl', 'PnL distribution')
+# Prometheus metrics removed - not needed for B2C
+# INFERENCE_COUNTER = Counter('b2c_inference_total', 'Total number of inferences')
+# ORDER_COUNTER = Counter('b2c_orders_total', 'Total number of orders')
+# PNL_HISTOGRAM = Histogram('b2c_pnl', 'PnL distribution')
 
 class B2CInvestorPlatform:
     def __init__(self):
         self.initialize_session_state()
-        self.setup_metrics()
+        # self.setup_metrics()  # Removed - not needed for B2C
         self.setup_database()
         
     def setup_database(self):
@@ -116,12 +116,12 @@ class B2CInvestorPlatform:
             st.error(f"User creation error: {e}")
             return False
             
-    def setup_metrics(self):
-        """Setup Prometheus metrics server"""
-        try:
-            start_http_server(8000)
-        except:
-            pass  # Server might already be running
+    # def setup_metrics(self):
+    #     """Setup Prometheus metrics server"""
+    #     try:
+    #         start_http_server(8000)
+    #     except:
+    #         pass  # Server might already be running
             
     def get_model_prediction(self, model_name: str, features: np.ndarray) -> Tuple[int, float]:
         """Get prediction from a specific model"""
@@ -138,7 +138,7 @@ class B2CInvestorPlatform:
                 prediction = 0
                 confidence = 0.5
                 
-            INFERENCE_COUNTER.inc()
+            # INFERENCE_COUNTER.inc()  # Removed - not needed for B2C
             return prediction, confidence
             
         except Exception as e:
@@ -165,7 +165,7 @@ class B2CInvestorPlatform:
                 elif prediction == 2:  # SELL
                     order['pnl_impact'] = random.uniform(-0.02, 0.05)
                     
-            ORDER_COUNTER.inc()
+            # ORDER_COUNTER.inc()  # Removed - not needed for B2C
             return order
             
         except Exception as e:
