@@ -64,7 +64,7 @@ services:
       - "8504:8501"
     environment:
       - REDIS_URL=redis://redis:6379
-      - POSTGRES_URL=postgresql://user:pass@postgres:5432/b2c_investment
+      - POSTGRES_URL=postgresql://user:pass@postgres:5432/quant_trading
       - MAX_WORKERS=4
       - BATCH_SIZE=10000
     depends_on:
@@ -82,7 +82,7 @@ services:
       - "8505:8501"
     environment:
       - REDIS_URL=redis://redis:6379
-      - POSTGRES_URL=postgresql://user:pass@postgres:5432/b2c_investment
+      - POSTGRES_URL=postgresql://user:pass@postgres:5432/quant_trading
       - MODEL_STORAGE_PATH=/app/models
       - MAX_TRAINING_TIME=3600
     volumes:
@@ -98,7 +98,7 @@ services:
   postgres:
     image: postgres:15
     environment:
-      - POSTGRES_DB=b2c_investment
+      - POSTGRES_DB=quant_trading
       - POSTGRES_USER=user
       - POSTGRES_PASSWORD=pass
     ports:
