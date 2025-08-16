@@ -545,6 +545,10 @@ class ProductionFeatureEngineer:
     
     def _add_spread_features_optimized(self, df: pd.DataFrame, features: List[str]) -> pd.DataFrame:
         """Add spread analysis features (OPTIMIZED with vectorization)"""
+        # Calculate spread if not present
+        if 'spread' not in df.columns:
+            df['spread'] = df['ask'] - df['bid']
+        
         # Vectorized spread calculations
         if any('spread_' in f for f in features):
             periods = [int(f.split('_')[-1]) for f in features if 'spread_' in f and f != 'spread_volatility' and '_' in f and f.split('_')[-1].isdigit()]

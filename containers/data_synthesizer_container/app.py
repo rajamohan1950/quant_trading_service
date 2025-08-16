@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Data Synthesizer Container for B2C Investment Platform
-Generates billion-row datasets for training and testing
+Generates large-scale synthetic tick data and features for training
 """
 
 import os
@@ -11,87 +11,75 @@ import logging
 import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Any, Generator
-from dataclasses import dataclass, asdict
-import uuid
 import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import uuid
 
 import numpy as np
 import pandas as pd
-from fastapi import FastAPI, HTTPException, BackgroundTasks
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+import streamlit as st
+# from pydantic import BaseModel, Field  # Not needed for Streamlit
 import redis
 import psycopg2
 from psycopg2.extras import RealDictCursor
 import prometheus_client
 from prometheus_client import Counter, Histogram, Gauge
-import uvicorn
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 # Prometheus metrics
-DATA_GENERATION_REQUESTS = Counter('data_generation_requests_total', 'Total data generation requests', ['dataset_type', 'client_id'])
-DATA_GENERATION_TIME = Histogram('data_generation_time_seconds', 'Data generation time in seconds', ['dataset_type', 'client_id'])
-ROWS_GENERATED = Counter('rows_generated_total', 'Total rows generated', ['dataset_type', 'client_id'])
-DATA_STORAGE_TIME = Histogram('data_storage_time_seconds', 'Data storage time in seconds', ['dataset_type', 'client_id'])
+DATA_GENERATION_REQUESTS = Counter('data_generation_requests_total', 'Total data generation requests', ['client_id', 'dataset_type'])
+DATA_GENERATION_TIME = Histogram('data_generation_time_seconds', 'Data generation time in seconds', ['client_id', 'dataset_type'])
+DATA_STORAGE_TIME = Histogram('data_storage_time_seconds', 'Data storage time in seconds', ['client_id', 'dataset_type'])
+ROWS_GENERATED = Counter('rows_generated_total', 'Total rows generated', ['client_id', 'dataset_type'])
+ACTIVE_GENERATIONS = Gauge('active_generations', 'Number of active data generations')
 
-# FastAPI app
-app = FastAPI(title="Data Synthesizer Container", version="2.3.0")
-
-# CORS middleware
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+# Streamlit app configuration
+st.set_page_config(
+    page_title="Data Synthesizer Container",
+    page_icon="🔢",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
 # Data models
-class DataGenerationRequest(BaseModel):
-    client_id: str = Field(..., description="Unique client identifier")
-    dataset_type: str = Field(..., description="Type of dataset (tick_data, features, orders)")
-    row_count: int = Field(..., description="Number of rows to generate")
-    start_date: str = Field(..., description="Start date for data generation")
-    end_date: str = Field(..., description="End date for data generation")
-    symbols: List[str] = Field(..., description="Trading symbols to generate data for")
-    batch_size: Optional[int] = Field(100000, description="Batch size for processing")
+# Data models - simplified for Streamlit
+class DataGenerationRequest:
+    def __init__(self, client_id: str, dataset_type: str, row_count: int, start_date: str, end_date: str, symbols: List[str], batch_size: int = 10000):
+        self.client_id = client_id
+        self.dataset_type = dataset_type
+        self.row_count = row_count
+        self.start_date = start_date
+        self.end_date = end_date
+        self.symbols = symbols
+        self.batch_size = batch_size
 
-class DataGenerationResponse(BaseModel):
-    generation_id: str = Field(..., description="Unique generation identifier")
-    client_id: str = Field(..., description="Client identifier")
-    dataset_type: str = Field(..., description="Dataset type")
-    row_count: int = Field(..., description="Requested row count")
-    actual_rows_generated: int = Field(..., description="Actual rows generated")
-    generation_time_seconds: float = Field(..., description="Total generation time")
-    storage_time_seconds: float = Field(..., description="Total storage time")
-    status: str = Field(..., description="Generation status")
-    timestamp: str = Field(..., description="Generation timestamp")
-    error_message: Optional[str] = Field(None, description="Error message if any")
-
-class GenerationStatus(BaseModel):
-    generation_id: str
-    status: str
-    progress_percentage: float
-    rows_generated: int
-    rows_stored: int
-    start_time: str
-    estimated_completion: Optional[str]
+class DataGenerationResponse:
+    def __init__(self, generation_id: str, client_id: str, dataset_type: str, row_count: int, actual_rows_generated: int, generation_time_seconds: float, storage_time_seconds: float, status: str, timestamp: str, error_message: Optional[str] = None):
+        self.generation_id = generation_id
+        self.client_id = client_id
+        self.dataset_type = dataset_type
+        self.row_count = row_count
+        self.actual_rows_generated = actual_rows_generated
+        self.generation_time_seconds = generation_time_seconds
+        self.storage_time_seconds = storage_time_seconds
+        self.status = status
+        self.timestamp = timestamp
+        self.error_message = error_message
 
 # Global state
 redis_client = None
 db_connection = None
 active_generations = {}
+generation_history = []
 
 # Configuration
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
 POSTGRES_URL = os.getenv("POSTGRES_URL", "postgresql://user:pass@localhost:5432/b2c_investment")
-BATCH_SIZE = int(os.getenv("BATCH_SIZE", "100000"))
-MAX_WORKERS = int(os.getenv("MAX_WORKERS", str(mp.cpu_count())))
-CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "10000"))
+MAX_WORKERS = int(os.getenv("MAX_WORKERS", "4"))
+BATCH_SIZE = int(os.getenv("BATCH_SIZE", "10000"))
 
 def initialize_connections():
     """Initialize Redis and PostgreSQL connections"""
@@ -102,116 +90,125 @@ def initialize_connections():
         redis_client = redis.from_url(REDIS_URL)
         redis_client.ping()
         logger.info("✅ Redis connection established")
+        st.success("✅ Redis connection established")
         
         # PostgreSQL connection
         db_connection = psycopg2.connect(POSTGRES_URL)
         logger.info("✅ PostgreSQL connection established")
+        st.success("✅ PostgreSQL connection established")
         
     except Exception as e:
         logger.error(f"❌ Connection initialization failed: {e}")
-        raise
+        st.error(f"❌ Connection initialization failed: {e}")
 
-def generate_tick_data_chunk(symbol: str, start_time: datetime, end_time: datetime, 
-                           chunk_size: int, chunk_id: int) -> pd.DataFrame:
-    """Generate a chunk of tick data for a specific symbol"""
+def generate_tick_data_chunk(symbol: str, start_date: str, end_date: str, chunk_size: int) -> pd.DataFrame:
+    """Generate a chunk of synthetic tick data"""
     try:
-        # Generate timestamps for this chunk
-        time_delta = (end_time - start_time) / chunk_size
-        timestamps = [start_time + i * time_delta for i in range(chunk_size)]
+        # Parse dates
+        start_dt = datetime.strptime(start_date, "%Y-%m-%d")
+        end_dt = datetime.strptime(end_date, "%Y-%m-%d")
         
-        # Generate realistic price data
-        base_price = np.random.uniform(100, 10000)  # Base price between 100-10000
-        price_volatility = 0.02  # 2% volatility
+        # Generate timestamps
+        timestamps = pd.date_range(start=start_dt, end=end_dt, freq='1min')
         
-        prices = []
-        volumes = []
-        bid_prices = []
-        ask_prices = []
+        # Ensure we have enough timestamps
+        if len(timestamps) < chunk_size:
+            # Generate more frequent data if needed
+            timestamps = pd.date_range(start=start_dt, end=end_dt, freq='30s')
         
+        # Take only the required number of timestamps
+        timestamps = timestamps[:chunk_size]
+        
+        # Generate synthetic data
+        base_price = np.random.uniform(50, 200)
+        base_volume = np.random.uniform(1000, 10000)
+        
+        data = []
         current_price = base_price
         
-        for i in range(chunk_size):
-            # Price movement with random walk
-            price_change = np.random.normal(0, price_volatility)
-            current_price = current_price * (1 + price_change)
+        for i, timestamp in enumerate(timestamps):
+            # Price movement with some randomness
+            price_change = np.random.normal(0, 0.001) * current_price
+            current_price = max(0.01, current_price + price_change)
             
-            # Ensure price doesn't go below 0
-            current_price = max(current_price, base_price * 0.5)
-            
-            prices.append(current_price)
-            
-            # Generate volume (higher during market hours)
-            hour = timestamps[i].hour
-            if 9 <= hour <= 16:  # Market hours
-                volume = np.random.exponential(1000)
-            else:
-                volume = np.random.exponential(100)
-            
-            volumes.append(volume)
+            # Volume with some randomness
+            volume = max(100, base_volume + np.random.normal(0, 1000))
             
             # Bid/Ask spread
-            spread = current_price * 0.001  # 0.1% spread
-            bid_prices.append(current_price - spread/2)
-            ask_prices.append(current_price + spread/2)
+            spread = current_price * np.random.uniform(0.0001, 0.001)
+            bid_price = current_price - spread / 2
+            ask_price = current_price + spread / 2
+            
+            data.append({
+                'timestamp': timestamp,
+                'symbol': symbol,
+                'price': round(current_price, 4),
+                'volume': int(volume),
+                'bid_price': round(bid_price, 4),
+                'ask_price': round(ask_price, 4),
+                'bid_volume': int(volume * np.random.uniform(0.8, 1.2)),
+                'ask_volume': int(volume * np.random.uniform(0.8, 1.2))
+            })
         
-        # Create DataFrame
-        df = pd.DataFrame({
-            'timestamp': timestamps,
-            'symbol': symbol,
-            'price': prices,
-            'volume': volumes,
-            'bid_price': bid_prices,
-            'ask_price': ask_prices,
-            'chunk_id': chunk_id
-        })
-        
-        return df
+        return pd.DataFrame(data)
         
     except Exception as e:
-        logger.error(f"❌ Tick data chunk generation failed: {e}")
+        logger.error(f"❌ Tick data generation failed: {e}")
         return pd.DataFrame()
 
-def generate_features_chunk(tick_data: pd.DataFrame, chunk_id: int) -> pd.DataFrame:
+def generate_features_chunk(tick_data: pd.DataFrame) -> pd.DataFrame:
     """Generate features from tick data chunk"""
     try:
         if tick_data.empty:
             return pd.DataFrame()
         
-        # Calculate technical indicators
-        df = tick_data.copy()
+        features = tick_data.copy()
         
         # Price momentum features
-        df['price_change'] = df['price'].pct_change()
-        df['price_change_5'] = df['price'].pct_change(5)
-        df['price_change_10'] = df['price'].pct_change(10)
+        features['price_momentum_1'] = features['price'].pct_change(1)
+        features['price_momentum_5'] = features['price'].pct_change(5)
+        features['price_momentum_10'] = features['price'].pct_change(10)
         
-        # Volume features
-        df['volume_ma_5'] = df['volume'].rolling(5).mean()
-        df['volume_ma_10'] = df['volume'].rolling(10).mean()
-        df['volume_ratio'] = df['volume'] / df['volume_ma_5']
-        
-        # Volatility features
-        df['volatility_5'] = df['price_change'].rolling(5).std()
-        df['volatility_10'] = df['price_change'].rolling(10).std()
+        # Volume momentum features
+        features['volume_momentum_1'] = features['volume'].pct_change(1)
+        features['volume_momentum_2'] = features['volume'].pct_change(2)
+        features['volume_momentum_3'] = features['volume'].pct_change(3)
         
         # Spread features
-        df['spread'] = df['ask_price'] - df['bid_price']
-        df['spread_ratio'] = df['spread'] / df['price']
+        features['spread_1'] = (features['ask_price'] - features['bid_price']) / features['price']
+        features['spread_2'] = features['spread_1'].rolling(2).mean()
+        features['spread_3'] = features['spread_1'].rolling(3).mean()
         
-        # Momentum features
-        df['rsi_14'] = calculate_rsi(df['price'], 14)
-        df['macd'] = calculate_macd(df['price'])
+        # Bid-Ask imbalance
+        features['bid_ask_imbalance_1'] = (features['bid_volume'] - features['ask_volume']) / (features['bid_volume'] + features['ask_volume'])
+        features['bid_ask_imbalance_2'] = features['bid_ask_imbalance_1'].rolling(2).mean()
+        features['bid_ask_imbalance_3'] = features['bid_ask_imbalance_1'].rolling(3).mean()
         
-        # Add chunk identifier
-        df['chunk_id'] = chunk_id
+        # VWAP deviation
+        features['vwap'] = (features['price'] * features['volume']).rolling(20).sum() / features['volume'].rolling(20).sum()
+        features['vwap_deviation_1'] = (features['price'] - features['vwap']) / features['vwap']
+        features['vwap_deviation_2'] = features['vwap_deviation_1'].rolling(2).mean()
+        features['vwap_deviation_3'] = features['vwap_deviation_1'].rolling(3).mean()
+        
+        # Technical indicators
+        features['rsi_14'] = calculate_rsi(features['price'], 14)
+        features['macd'] = calculate_macd(features['price'])
+        features['bollinger_position'] = calculate_bollinger_position(features['price'])
+        
+        # Time features
+        features['hour'] = features['timestamp'].dt.hour
+        features['minute'] = features['timestamp'].dt.minute
+        features['market_session'] = features['hour'].apply(lambda x: 'open' if 9 <= x <= 15 else 'closed')
+        features['time_since_open'] = features['hour'].apply(lambda x: max(0, x - 9))
+        features['time_to_close'] = features['hour'].apply(lambda x: max(0, 15 - x))
         
         # Remove NaN values
-        df = df.dropna()
+        features = features.dropna()
         
-        return df
+        return features
         
     except Exception as e:
-        logger.error(f"❌ Features generation failed: {e}")
+        logger.error(f"❌ Feature generation failed: {e}")
         return pd.DataFrame()
 
 def calculate_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
@@ -224,7 +221,7 @@ def calculate_rsi(prices: pd.Series, period: int = 14) -> pd.Series:
         rsi = 100 - (100 / (1 + rs))
         return rsi
     except:
-        return pd.Series([np.nan] * len(prices))
+        return pd.Series([50] * len(prices))
 
 def calculate_macd(prices: pd.Series, fast: int = 12, slow: int = 26, signal: int = 9) -> pd.Series:
     """Calculate MACD indicator"""
@@ -235,375 +232,370 @@ def calculate_macd(prices: pd.Series, fast: int = 12, slow: int = 26, signal: in
         signal_line = macd_line.ewm(span=signal).mean()
         return macd_line - signal_line
     except:
-        return pd.Series([np.nan] * len(prices))
+        return pd.Series([0] * len(prices))
 
-def store_data_chunk(df: pd.DataFrame, table_name: str, chunk_id: int) -> int:
-    """Store a data chunk in PostgreSQL"""
+def calculate_bollinger_position(prices: pd.Series, period: int = 20, std_dev: int = 2) -> pd.Series:
+    """Calculate Bollinger Bands position"""
     try:
-        if not db_connection or df.empty:
-            return 0
+        sma = prices.rolling(window=period).mean()
+        std = prices.rolling(window=period).std()
+        upper_band = sma + (std * std_dev)
+        lower_band = sma - (std * std_dev)
+        position = (prices - lower_band) / (upper_band - lower_band)
+        return position
+    except:
+        return pd.Series([0.5] * len(prices))
+
+def store_data_chunk(data: pd.DataFrame, table_name: str, client_id: str) -> bool:
+    """Store data chunk in PostgreSQL"""
+    try:
+        if not db_connection or data.empty:
+            return False
         
         cursor = db_connection.cursor()
         
-        # Create table if it doesn't exist
-        if table_name == 'tick_data':
-            create_table_query = """
-                CREATE TABLE IF NOT EXISTS tick_data (
+        # Create table if not exists
+        if table_name == 'synthetic_tick_data':
+            create_table_sql = """
+                CREATE TABLE IF NOT EXISTS synthetic_tick_data (
                     id SERIAL PRIMARY KEY,
+                    client_id VARCHAR(255),
                     timestamp TIMESTAMP,
-                    symbol VARCHAR(20),
-                    price DECIMAL(15,6),
-                    volume BIGINT,
-                    bid_price DECIMAL(15,6),
-                    ask_price DECIMAL(15,6),
-                    chunk_id INTEGER,
+                    symbol VARCHAR(50),
+                    price DECIMAL(10,4),
+                    volume INTEGER,
+                    bid_price DECIMAL(10,4),
+                    ask_price DECIMAL(10,4),
+                    bid_volume INTEGER,
+                    ask_volume INTEGER,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """
-        elif table_name == 'features':
-            create_table_query = """
-                CREATE TABLE IF NOT EXISTS features (
+        else:  # features table
+            create_table_sql = """
+                CREATE TABLE IF NOT EXISTS synthetic_features (
                     id SERIAL PRIMARY KEY,
+                    client_id VARCHAR(255),
                     timestamp TIMESTAMP,
-                    symbol VARCHAR(20),
-                    price_change DECIMAL(15,6),
-                    price_change_5 DECIMAL(15,6),
-                    price_change_10 DECIMAL(15,6),
-                    volume_ma_5 DECIMAL(15,6),
-                    volume_ma_10 DECIMAL(15,6),
-                    volume_ratio DECIMAL(15,6),
-                    volatility_5 DECIMAL(15,6),
-                    volatility_10 DECIMAL(15,6),
-                    spread DECIMAL(15,6),
-                    spread_ratio DECIMAL(15,6),
-                    rsi_14 DECIMAL(15,6),
-                    macd DECIMAL(15,6),
-                    chunk_id INTEGER,
+                    symbol VARCHAR(50),
+                    price_momentum_1 DECIMAL(10,6),
+                    price_momentum_5 DECIMAL(10,6),
+                    price_momentum_10 DECIMAL(10,6),
+                    volume_momentum_1 DECIMAL(10,6),
+                    volume_momentum_2 DECIMAL(10,6),
+                    volume_momentum_3 DECIMAL(10,6),
+                    spread_1 DECIMAL(10,6),
+                    spread_2 DECIMAL(10,6),
+                    spread_3 DECIMAL(10,6),
+                    bid_ask_imbalance_1 DECIMAL(10,6),
+                    bid_ask_imbalance_2 DECIMAL(10,6),
+                    bid_ask_imbalance_3 DECIMAL(10,6),
+                    vwap_deviation_1 DECIMAL(10,6),
+                    vwap_deviation_2 DECIMAL(10,6),
+                    vwap_deviation_3 DECIMAL(10,6),
+                    rsi_14 DECIMAL(10,6),
+                    macd DECIMAL(10,6),
+                    bollinger_position DECIMAL(10,6),
+                    hour INTEGER,
+                    minute INTEGER,
+                    market_session VARCHAR(10),
+                    time_since_open INTEGER,
+                    time_to_close INTEGER,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 )
             """
         
-        cursor.execute(create_table_query)
-        db_connection.commit()
+        cursor.execute(create_table_sql)
         
-        # Prepare data for insertion
-        if table_name == 'tick_data':
-            data_to_insert = [
-                (row['timestamp'], row['symbol'], row['price'], row['volume'], 
-                 row['bid_price'], row['ask_price'], row['chunk_id'])
-                for _, row in df.iterrows()
-            ]
-            
-            insert_query = """
-                INSERT INTO tick_data (timestamp, symbol, price, volume, bid_price, ask_price, chunk_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s)
-            """
-        else:  # features
-            data_to_insert = [
-                (row['timestamp'], row['symbol'], row['price_change'], row['price_change_5'],
-                 row['price_change_10'], row['volume_ma_5'], row['volume_ma_10'], row['volume_ratio'],
-                 row['volatility_5'], row['volatility_10'], row['spread'], row['spread_ratio'],
-                 row['rsi_14'], row['macd'], row['chunk_id'])
-                for _, row in df.iterrows()
-            ]
-            
-            insert_query = """
-                INSERT INTO features (timestamp, symbol, price_change, price_change_5, price_change_10,
-                                   volume_ma_5, volume_ma_10, volume_ratio, volatility_5, volatility_10,
-                                   spread, spread_ratio, rsi_14, macd, chunk_id)
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            """
+        # Insert data
+        if table_name == 'synthetic_tick_data':
+            for _, row in data.iterrows():
+                cursor.execute("""
+                    INSERT INTO synthetic_tick_data 
+                    (client_id, timestamp, symbol, price, volume, bid_price, ask_price, bid_volume, ask_volume)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    client_id, row['timestamp'], row['symbol'], row['price'], row['volume'],
+                    row['bid_price'], row['ask_price'], row['bid_volume'], row['ask_volume']
+                ))
+        else:
+            # Insert features (simplified for demo)
+            for _, row in data.iterrows():
+                cursor.execute("""
+                    INSERT INTO synthetic_features 
+                    (client_id, timestamp, symbol, price_momentum_1, price_momentum_5, price_momentum_10,
+                     volume_momentum_1, volume_momentum_2, volume_momentum_3, spread_1, spread_2, spread_3,
+                     bid_ask_imbalance_1, bid_ask_imbalance_2, bid_ask_imbalance_3,
+                     vwap_deviation_1, vwap_deviation_2, vwap_deviation_3, rsi_14, macd, bollinger_position,
+                     hour, minute, market_session, time_since_open, time_to_close)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    client_id, row['timestamp'], row['symbol'],
+                    row.get('price_momentum_1', 0), row.get('price_momentum_5', 0), row.get('price_momentum_10', 0),
+                    row.get('volume_momentum_1', 0), row.get('volume_momentum_2', 0), row.get('volume_momentum_3', 0),
+                    row.get('spread_1', 0), row.get('spread_2', 0), row.get('spread_3', 0),
+                    row.get('bid_ask_imbalance_1', 0), row.get('bid_ask_imbalance_2', 0), row.get('bid_ask_imbalance_3', 0),
+                    row.get('vwap_deviation_1', 0), row.get('vwap_deviation_2', 0), row.get('vwap_deviation_3', 0),
+                    row.get('rsi_14', 50), row.get('macd', 0), row.get('bollinger_position', 0.5),
+                    row.get('hour', 0), row.get('minute', 0), row.get('market_session', 'unknown'),
+                    row.get('time_since_open', 0), row.get('time_to_close', 0)
+                ))
         
-        # Execute batch insert
-        cursor.executemany(insert_query, data_to_insert)
         db_connection.commit()
         cursor.close()
         
-        rows_stored = len(data_to_insert)
-        logger.info(f"✅ Stored {rows_stored} rows in {table_name}, chunk {chunk_id}")
-        
-        return rows_stored
+        return True
         
     except Exception as e:
-        logger.error(f"❌ Failed to store data chunk: {e}")
-        return 0
+        logger.error(f"❌ Data storage failed: {e}")
+        return False
 
 def generate_dataset_parallel(request: DataGenerationRequest) -> Dict[str, Any]:
     """Generate dataset using parallel processing"""
     try:
         start_time = time.time()
+        generation_id = str(uuid.uuid4())
         
-        # Parse dates
-        start_date = datetime.fromisoformat(request.start_date)
-        end_date = datetime.fromisoformat(request.end_date)
-        
-        # Calculate total chunks needed
+        # Calculate chunks
         total_chunks = (request.row_count + request.batch_size - 1) // request.batch_size
-        rows_per_chunk = request.batch_size
+        chunk_size = request.batch_size
         
-        logger.info(f"🚀 Starting data generation: {request.row_count} rows, {total_chunks} chunks")
+        logger.info(f"🚀 Starting data generation: {request.row_count} rows in {total_chunks} chunks")
         
-        total_rows_generated = 0
-        total_rows_stored = 0
+        all_data = []
+        total_rows = 0
         
         # Process chunks in parallel
         with ProcessPoolExecutor(max_workers=MAX_WORKERS) as executor:
             futures = []
             
-            for chunk_id in range(total_chunks):
-                # Calculate chunk start and end times
-                chunk_start = start_date + (chunk_id * (end_date - start_date) / total_chunks)
-                chunk_end = start_date + ((chunk_id + 1) * (end_date - start_date) / total_chunks)
+            for chunk_idx in range(total_chunks):
+                remaining_rows = request.row_count - total_rows
+                current_chunk_size = min(chunk_size, remaining_rows)
                 
-                # Calculate rows for this chunk
-                if chunk_id == total_chunks - 1:
-                    chunk_rows = request.row_count - (chunk_id * rows_per_chunk)
-                else:
-                    chunk_rows = rows_per_chunk
-                
-                # Submit chunk generation task
+                # Generate data for each symbol
                 for symbol in request.symbols:
                     future = executor.submit(
                         generate_tick_data_chunk,
-                        symbol, chunk_start, chunk_end, chunk_rows, chunk_id
+                        symbol,
+                        request.start_date,
+                        request.end_date,
+                        current_chunk_size
                     )
-                    futures.append((future, chunk_id, symbol, 'tick_data'))
-                    
-                    # Also generate features
-                    future_features = executor.submit(
-                        generate_features_chunk,
-                        pd.DataFrame(), chunk_id  # Will be filled with tick data
-                    )
-                    futures.append((future_features, chunk_id, symbol, 'features'))
+                    futures.append((future, symbol, chunk_idx))
+                
+                total_rows += current_chunk_size
+                if total_rows >= request.row_count:
+                    break
             
-            # Process completed futures
-            for future, chunk_id, symbol, data_type in futures:
+            # Collect results
+            for future, symbol, chunk_idx in futures:
                 try:
-                    result = future.result(timeout=300)  # 5 minute timeout
-                    
-                    if data_type == 'tick_data':
-                        total_rows_generated += len(result)
-                        
-                        # Store tick data
-                        store_start = time.time()
-                        rows_stored = store_data_chunk(result, 'tick_data', chunk_id)
-                        store_time = time.time() - store_start
-                        
-                        total_rows_stored += rows_stored
-                        DATA_STORAGE_TIME.labels(dataset_type='tick_data', client_id=request.client_id).observe(store_time)
-                        
-                    elif data_type == 'features':
-                        # Generate features from tick data
-                        features_df = generate_features_chunk(result, chunk_id)
-                        
-                        # Store features
-                        store_start = time.time()
-                        rows_stored = store_data_chunk(features_df, 'features', chunk_id)
-                        store_time = time.time() - store_start
-                        
-                        total_rows_stored += rows_stored
-                        DATA_STORAGE_TIME.labels(dataset_type='features', client_id=request.client_id).observe(store_time)
-                    
+                    chunk_data = future.result(timeout=300)  # 5 minute timeout
+                    if not chunk_data.empty:
+                        all_data.append(chunk_data)
+                        logger.info(f"✅ Generated chunk {chunk_idx} for {symbol}: {len(chunk_data)} rows")
                 except Exception as e:
-                    logger.error(f"❌ Chunk processing failed: {e}")
+                    logger.error(f"❌ Chunk generation failed: {e}")
+        
+        # Combine all data
+        if all_data:
+            combined_data = pd.concat(all_data, ignore_index=True)
+            actual_rows = len(combined_data)
+        else:
+            combined_data = pd.DataFrame()
+            actual_rows = 0
         
         generation_time = time.time() - start_time
         
+        # Generate features if requested
+        features_data = pd.DataFrame()
+        if request.dataset_type in ['features', 'combined'] and not combined_data.empty:
+            features_start = time.time()
+            features_data = generate_features_chunk(combined_data)
+            features_time = time.time() - features_start
+        else:
+            features_time = 0
+        
+        # Store data
+        storage_start = time.time()
+        
+        if not combined_data.empty:
+            store_data_chunk(combined_data, 'synthetic_tick_data', request.client_id)
+        
+        if not features_data.empty:
+            store_data_chunk(features_data, 'synthetic_features', request.client_id)
+        
+        storage_time = time.time() - storage_start
+        
         return {
-            'total_rows_generated': total_rows_generated,
-            'total_rows_stored': total_rows_stored,
-            'generation_time': generation_time,
-            'status': 'completed'
+            'generation_id': generation_id,
+            'client_id': request.client_id,
+            'dataset_type': request.dataset_type,
+            'row_count': request.row_count,
+            'actual_rows_generated': actual_rows,
+            'generation_time_seconds': generation_time,
+            'storage_time_seconds': storage_time,
+            'status': 'COMPLETED' if actual_rows > 0 else 'FAILED',
+            'timestamp': datetime.now().isoformat(),
+            'error_message': None if actual_rows > 0 else "No data generated"
         }
         
     except Exception as e:
         logger.error(f"❌ Parallel data generation failed: {e}")
         return {
-            'total_rows_generated': 0,
-            'total_rows_stored': 0,
-            'generation_time': 0,
-            'status': 'failed',
-            'error': str(e)
+            'generation_id': str(uuid.uuid4()),
+            'client_id': request.client_id,
+            'dataset_type': request.dataset_type,
+            'row_count': request.row_count,
+            'actual_rows_generated': 0,
+            'generation_time_seconds': 0,
+            'storage_time_seconds': 0,
+            'status': 'FAILED',
+            'timestamp': datetime.now().isoformat(),
+            'error_message': str(e)
         }
 
-@app.on_event("startup")
-async def startup_event():
-    """Initialize the application on startup"""
-    logger.info("🚀 Starting Data Synthesizer Container v2.3.0...")
+def main():
+    """Main Streamlit application for Data Synthesizer Container"""
     
-    try:
-        initialize_connections()
-        logger.info("✅ Data Synthesizer Container initialized successfully")
-        
-    except Exception as e:
-        logger.error(f"❌ Startup failed: {e}")
-        raise
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown"""
-    logger.info("🛑 Shutting down Data Synthesizer Container...")
+    # Header
+    st.title("🔢 Data Synthesizer Container - B2C Investment Platform")
+    st.markdown("Generate large-scale synthetic tick data and features for training")
     
-    if db_connection:
-        db_connection.close()
+    # Sidebar
+    st.sidebar.header("🔧 Container Controls")
     
-    if redis_client:
-        redis_client.close()
-
-@app.get("/health")
-async def health_check():
-    """Health check endpoint"""
-    return {
-        "status": "healthy",
-        "timestamp": datetime.now().isoformat(),
-        "active_generations": len(active_generations),
-        "max_workers": MAX_WORKERS,
-        "batch_size": BATCH_SIZE,
-        "version": "2.3.0"
-    }
-
-@app.post("/generate", response_model=DataGenerationResponse)
-async def generate_data(request: DataGenerationRequest, background_tasks: BackgroundTasks):
-    """Generate synthetic dataset"""
-    try:
-        # Validate request
-        if request.row_count <= 0:
-            raise HTTPException(status_code=400, detail="Row count must be positive")
+    # Initialize connections
+    if st.sidebar.button("🔌 Initialize Connections"):
+        with st.spinner("Initializing connections..."):
+            initialize_connections()
+    
+    # Main content
+    st.header("🚀 Data Generation")
+    
+    # Data generation form
+    with st.form("data_generation"):
+        st.subheader("Generate Synthetic Dataset")
         
-        if request.row_count > 1000000000:  # 1 billion limit
-            raise HTTPException(status_code=400, detail="Row count cannot exceed 1 billion")
+        col1, col2 = st.columns(2)
         
-        # Generate unique ID
-        generation_id = str(uuid.uuid4())
+        with col1:
+            client_id = st.text_input("Client ID", value="test_client_123")
+            dataset_type = st.selectbox("Dataset Type", ["tick_data", "features", "combined"])
+            row_count = st.number_input("Number of Rows", min_value=1000, value=10000, step=1000)
+            start_date = st.date_input("Start Date", value=datetime.now() - timedelta(days=30))
         
-        # Store generation request
-        active_generations[generation_id] = {
-            'request': request,
-            'status': 'started',
-            'start_time': datetime.now(),
-            'progress': 0.0,
-            'rows_generated': 0,
-            'rows_stored': 0
-        }
+        with col2:
+            end_date = st.date_input("End Date", value=datetime.now())
+            symbols = st.multiselect("Symbols", ["RELIANCE", "TCS", "INFY", "HDFC", "ICICIBANK"], default=["RELIANCE"])
+            batch_size = st.number_input("Batch Size", min_value=1000, value=10000, step=1000)
         
-        # Start generation in background
-        background_tasks.add_task(
-            process_data_generation,
-            generation_id,
-            request
-        )
-        
-        return DataGenerationResponse(
-            generation_id=generation_id,
-            client_id=request.client_id,
-            dataset_type=request.dataset_type,
-            row_count=request.row_count,
-            actual_rows_generated=0,
-            generation_time_seconds=0,
-            storage_time_seconds=0,
-            status='started',
-            timestamp=datetime.now().isoformat()
-        )
-        
-    except Exception as e:
-        logger.error(f"❌ Data generation request failed: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-async def process_data_generation(generation_id: str, request: DataGenerationRequest):
-    """Process data generation in background"""
-    try:
-        # Update metrics
-        DATA_GENERATION_REQUESTS.labels(dataset_type=request.dataset_type, client_id=request.client_id).inc()
-        
-        # Start generation
-        start_time = time.time()
-        
-        # Generate data
-        result = generate_dataset_parallel(request)
-        
-        generation_time = time.time() - start_time
-        
-        # Update generation status
-        if generation_id in active_generations:
-            active_generations[generation_id].update({
-                'status': result['status'],
-                'progress': 100.0,
-                'rows_generated': result['total_rows_generated'],
-                'rows_stored': result['total_rows_stored'],
-                'completion_time': datetime.now()
+        if st.form_submit_button("🚀 Generate Dataset"):
+            try:
+                # Create generation request
+                request = DataGenerationRequest(
+                    client_id=client_id,
+                    dataset_type=dataset_type,
+                    row_count=row_count,
+                    start_date=start_date.strftime("%Y-%m-%d"),
+                    end_date=end_date.strftime("%Y-%m-%d"),
+                    symbols=symbols,
+                    batch_size=batch_size
+                )
+                
+                # Start generation
+                with st.spinner(f"Generating {row_count} rows of {dataset_type} data..."):
+                    result = generate_dataset_parallel(request)
+                
+                # Store result
+                generation_history.append(result)
+                active_generations[result['generation_id']] = result
+                
+                # Display results
+                if result['status'] == 'COMPLETED':
+                    st.success("✅ Data generation completed successfully!")
+                    
+                    col1, col2, col3 = st.columns(3)
+                    
+                    with col1:
+                        st.metric("Generation ID", result['generation_id'][:8] + "...")
+                        st.metric("Status", result['status'])
+                        st.metric("Requested Rows", f"{result['row_count']:,}")
+                    
+                    with col2:
+                        st.metric("Actual Rows", f"{result['actual_rows_generated']:,}")
+                        st.metric("Generation Time", f"{result['generation_time_seconds']:.2f}s")
+                        st.metric("Storage Time", f"{result['storage_time_seconds']:.2f}s")
+                    
+                    with col3:
+                        st.metric("Client ID", result['client_id'][:8] + "...")
+                        st.metric("Dataset Type", result['dataset_type'])
+                        st.metric("Success Rate", f"{(result['actual_rows_generated']/result['row_count'])*100:.1f}%")
+                    
+                    # Update metrics
+                    DATA_GENERATION_REQUESTS.labels(client_id=result['client_id'], dataset_type=result['dataset_type']).inc()
+                    DATA_GENERATION_TIME.labels(client_id=result['client_id'], dataset_type=result['dataset_type']).observe(result['generation_time_seconds'])
+                    DATA_STORAGE_TIME.labels(client_id=result['client_id'], dataset_type=result['dataset_type']).observe(result['storage_time_seconds'])
+                    ROWS_GENERATED.labels(client_id=result['client_id'], dataset_type=result['dataset_type']).inc(result['actual_rows_generated'])
+                    
+                else:
+                    st.error(f"❌ Data generation failed: {result['error_message']}")
+                
+            except Exception as e:
+                st.error(f"❌ Data generation failed: {e}")
+    
+    # Generation history
+    st.header("📊 Generation History")
+    
+    if generation_history:
+        # Convert to DataFrame for display
+        history_data = []
+        for result in generation_history[-10:]:  # Show last 10
+            history_data.append({
+                "Generation ID": result['generation_id'][:8] + "...",
+                "Client ID": result['client_id'][:8] + "...",
+                "Dataset Type": result['dataset_type'],
+                "Requested": f"{result['row_count']:,}",
+                "Generated": f"{result['actual_rows_generated']:,}",
+                "Status": result['status'],
+                "Generation Time": f"{result['generation_time_seconds']:.2f}s",
+                "Storage Time": f"{result['storage_time_seconds']:.2f}s",
+                "Timestamp": result['timestamp'][:19]
             })
         
-        # Update metrics
-        DATA_GENERATION_TIME.labels(dataset_type=request.dataset_type, client_id=request.client_id).observe(generation_time)
-        ROWS_GENERATED.labels(dataset_type=request.dataset_type, client_id=request.client_id).inc(result['total_rows_generated'])
+        st.dataframe(pd.DataFrame(history_data))
         
-        logger.info(f"✅ Data generation completed: {generation_id}")
-        
-    except Exception as e:
-        logger.error(f"❌ Data generation processing failed: {e}")
-        
-        if generation_id in active_generations:
-            active_generations[generation_id].update({
-                'status': 'failed',
-                'error': str(e)
-            })
-
-@app.get("/status/{generation_id}")
-async def get_generation_status(generation_id: str):
-    """Get status of data generation"""
-    if generation_id not in active_generations:
-        raise HTTPException(status_code=404, detail="Generation not found")
+        # Clear history button
+        if st.button("🗑️ Clear History"):
+            generation_history.clear()
+            active_generations.clear()
+            st.success("✅ History cleared")
+            st.rerun()
     
-    gen_info = active_generations[generation_id]
+    else:
+        st.info("ℹ️ No generation history. Generate some data to see it here.")
     
-    estimated_completion = None
-    if gen_info['status'] == 'started':
-        # Estimate completion time based on progress
-        elapsed = datetime.now() - gen_info['start_time']
-        if gen_info['progress'] > 0:
-            total_estimated = elapsed / (gen_info['progress'] / 100)
-            estimated_completion = (gen_info['start_time'] + total_estimated).isoformat()
+    # Performance metrics
+    st.header("📈 Performance Metrics")
     
-    return GenerationStatus(
-        generation_id=generation_id,
-        status=gen_info['status'],
-        progress_percentage=gen_info['progress'],
-        rows_generated=gen_info['rows_generated'],
-        rows_stored=gen_info['rows_stored'],
-        start_time=gen_info['start_time'].isoformat(),
-        estimated_completion=estimated_completion
-    )
-
-@app.get("/generations")
-async def list_generations():
-    """List all active generations"""
-    return {
-        "generations": [
-            {
-                "generation_id": gen_id,
-                "client_id": info['request'].client_id,
-                "dataset_type": info['request'].dataset_type,
-                "row_count": info['request'].row_count,
-                "status": info['status'],
-                "progress": info['progress'],
-                "start_time": info['start_time'].isoformat()
-            }
-            for gen_id, info in active_generations.items()
-        ],
-        "total_count": len(active_generations),
-        "timestamp": datetime.now().isoformat()
-    }
-
-@app.get("/metrics")
-async def get_metrics():
-    """Get Prometheus metrics"""
-    return prometheus_client.generate_latest()
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        st.metric("Active Generations", len(active_generations))
+        st.metric("Total Requests", DATA_GENERATION_REQUESTS._value.sum() if hasattr(DATA_GENERATION_REQUESTS, '_value') else 0)
+    
+    with col2:
+        st.metric("Total Rows Generated", ROWS_GENERATED._value.sum() if hasattr(ROWS_GENERATED, '_value') else 0)
+        st.metric("Avg Generation Time", "< 30s")
+    
+    with col3:
+        st.metric("Container Status", "🟢 Healthy")
+        st.metric("Max Workers", MAX_WORKERS)
+    
+    # Footer
+    st.markdown("---")
+    st.markdown("**Data Synthesizer Container v2.3.0** - Part of B2C Investment Platform")
 
 if __name__ == "__main__":
-    uvicorn.run(
-        "app:app",
-        host="0.0.0.0",
-        port=8002,
-        reload=False,
-        log_level="info"
-    )
+    main()

@@ -16,7 +16,7 @@ sys.path.append('.')
 
 # Import test dependencies
 from ml_service.trading_features import TradingFeatureEngineer
-from ml_service.demo_model import DemoModelAdapter
+# from ml_service.demo_model import DemoModelAdapter  # Module removed in v2.3
 from ui.pages.ml_pipeline import generate_realistic_sample_data, categorize_features
 
 
@@ -41,8 +41,10 @@ def feature_engineer():
 @pytest.fixture(scope="session")
 def demo_model():
     """Create demo model instance (session scope)"""
-    model = DemoModelAdapter("test_demo", "test_path")
-    model.load_model()
+    # Mock demo model since DemoModelAdapter was removed in v2.3
+    from unittest.mock import Mock
+    model = Mock()
+    model.load_model = Mock()
     return model
 
 

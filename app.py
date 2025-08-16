@@ -10,7 +10,7 @@ from ui.pages.backtest import render_backtest_ui
 from ui.pages.admin import render_admin_ui
 from ui.pages.strategies import render_strategies_ui
 from ui.pages.production_ml_pipeline import render_production_ml_pipeline_ui
-from ui.pages.b2c_investment import main as render_b2c_investment_ui
+from ui.pages.b2c_investor_simple import B2CInvestorPlatform
 import os
 
 def main():
@@ -45,7 +45,8 @@ def main():
         render_production_ml_pipeline_ui()
 
     with tab5:
-        render_b2c_investment_ui()
+        platform = B2CInvestorPlatform()
+        platform.main()
 
     with tab6:
         def show_coverage_report():
