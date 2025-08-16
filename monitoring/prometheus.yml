@@ -3,8 +3,13 @@ global:
   evaluation_interval: 15s
 
 rule_files:
-  # - "first_rules.yml"
-  # - "second_rules.yml"
+  - "rules/*.yml"
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+          - alertmanager:9093
 
 scrape_configs:
   # Prometheus itself
@@ -12,33 +17,59 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 
-  # ML Trading Application
-  - job_name: 'ml-trading-app'
+  # B2C Investor Platform
+  - job_name: 'b2c-investor'
     static_configs:
-      - targets: ['ml-trading-app:8501']
+      - targets: ['b2c-investor:8501']
     metrics_path: '/metrics'
     scrape_interval: 10s
 
-  # Redis
-  - job_name: 'redis'
+  # Inference Container
+  - job_name: 'inference'
     static_configs:
-      - targets: ['redis:6379']
+      - targets: ['inference:8000']
     metrics_path: '/metrics'
+    scrape_interval: 5s
+    scrape_timeout: 3s
+
+  # Order Execution Container
+  - job_name: 'order-execution'
+    static_configs:
+      - targets: ['order-execution:8001']
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+    scrape_timeout: 3s
+
+  # Training Pipeline Container
+  - job_name: 'training-pipeline'
+    static_configs:
+      - targets: ['training-pipeline:8003']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # Data Synthesizer Container
+  - job_name: 'data-synthesizer'
+    static_configs:
+      - targets: ['data-synthesizer:8002']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
 
   # PostgreSQL
   - job_name: 'postgres'
     static_configs:
       - targets: ['postgres:5432']
     metrics_path: '/metrics'
+    scrape_interval: 30s
 
-  # Node Exporter (if needed)
-  - job_name: 'node-exporter'
+  # Redis
+  - job_name: 'redis'
     static_configs:
-      - targets: ['node-exporter:9100']
+      - targets: ['redis:6379']
+    metrics_path: '/metrics'
+    scrape_interval: 15s
 
-  # Custom metrics endpoint
-  - job_name: 'trading-metrics'
+  # Node Exporter (if running on host)
+  - job_name: 'node'
     static_configs:
-      - targets: ['ml-trading-app:8501']
-    metrics_path: '/trading_metrics'
-    scrape_interval: 5s
+      - targets: ['host.docker.internal:9100']
+    scrape_interval: 30s

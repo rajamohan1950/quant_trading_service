@@ -1,0 +1,224 @@
+version: '3.8'
+
+services:
+  # B2C Investor Platform (Main UI)
+  b2c-investor:
+    build:
+      context: .
+      dockerfile: containers/b2c_investor/Dockerfile
+    container_name: b2c-investor
+    ports:
+      - "8503:8501"
+    environment:
+      - PYTHONPATH=/app
+      - STREAMLIT_SERVER_PORT=8501
+      - STREAMLIT_SERVER_ADDRESS=0.0.0.0
+      - STREAMLIT_SERVER_HEADLESS=true
+      - INFERENCE_API_URL=http://inference:8000
+      - ORDER_EXECUTION_API_URL=http://order-execution:8001
+    volumes:
+      - ./ml_models:/app/ml_models
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - inference
+      - order-execution
+    restart: unless-stopped
+    networks:
+      - b2c-network
+
+  # Inference Container
+  inference:
+    build:
+      context: .
+      dockerfile: containers/inference_container/Dockerfile
+    container_name: inference
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - POSTGRES_URL=postgresql://b2c_user:b2c_password@postgres:5432/b2c_investment
+      - MODEL_STORAGE_PATH=/app/models
+    volumes:
+      - ./ml_models:/app/models
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+      - postgres
+    restart: unless-stopped
+    networks:
+      - b2c-network
+
+  # Order Execution Container
+  order-execution:
+    build:
+      context: .
+      dockerfile: containers/order_execution_container/Dockerfile
+    container_name: order-execution
+    ports:
+      - "8001:8001"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - POSTGRES_URL=postgresql://b2c_user:b2c_password@postgres:5432/b2c_investment
+      - KITE_API_KEY=${KITE_API_KEY}
+      - KITE_API_SECRET=${KITE_API_SECRET}
+      - KITE_ACCESS_TOKEN=${KITE_ACCESS_TOKEN}
+    volumes:
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+      - postgres
+    restart: unless-stopped
+    networks:
+      - b2c-network
+
+  # Training Pipeline Container
+  training-pipeline:
+    build:
+      context: .
+      dockerfile: containers/training_pipeline_container/Dockerfile
+    container_name: training-pipeline
+    ports:
+      - "8003:8003"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - POSTGRES_URL=postgresql://b2c_user:b2c_password@postgres:5432/b2c_investment
+      - MODELS_STORAGE_PATH=/app/models
+    volumes:
+      - ./ml_models:/app/models
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+      - postgres
+    restart: unless-stopped
+    networks:
+      - b2c-network
+
+  # Data Synthesizer Container
+  data-synthesizer:
+    build:
+      context: .
+      dockerfile: containers/data_synthesizer_container/Dockerfile
+    container_name: data-synthesizer
+    ports:
+      - "8002:8002"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - POSTGRES_URL=postgresql://b2c_user:b2c_password@postgres:5432/b2c_investment
+      - BATCH_SIZE=100000
+      - MAX_WORKERS=4
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    depends_on:
+      - redis
+      - postgres
+    restart: unless-stopped
+    networks:
+      - b2c-network
+
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: b2c-postgres
+    environment:
+      POSTGRES_DB: b2c_investment
+      POSTGRES_USER: b2c_user
+      POSTGRES_PASSWORD: b2c_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    restart: unless-stopped
+    networks:
+      - b2c-network
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: b2c-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
+    networks:
+      - b2c-network
+
+  # Prometheus Monitoring
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: b2c-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+    restart: unless-stopped
+    networks:
+      - b2c-network
+
+  # Grafana Dashboard
+  grafana:
+    image: grafana/grafana:latest
+    container_name: b2c-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/dashboards:/etc/grafana/provisioning/dashboards
+      - ./monitoring/grafana/datasources:/etc/grafana/provisioning/datasources
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    networks:
+      - b2c-network
+
+  # Kafka (for high-throughput data streaming)
+  kafka:
+    image: confluentinc/cp-kafka:latest
+    container_name: b2c-kafka
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
+    depends_on:
+      - zookeeper
+    restart: unless-stopped
+    networks:
+      - b2c-network
+
+  # Zookeeper (for Kafka)
+  zookeeper:
+    image: confluentinc/cp-zookeeper:latest
+    container_name: b2c-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    restart: unless-stopped
+    networks:
+      - b2c-network
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  b2c-network:
+    driver: bridge

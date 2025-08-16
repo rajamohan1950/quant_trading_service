@@ -10,6 +10,7 @@ from ui.pages.backtest import render_backtest_ui
 from ui.pages.admin import render_admin_ui
 from ui.pages.strategies import render_strategies_ui
 from ui.pages.production_ml_pipeline import render_production_ml_pipeline_ui
+from ui.pages.b2c_investment import main as render_b2c_investment_ui
 import os
 
 def main():
@@ -29,7 +30,7 @@ def main():
     st.title("📊 Quant Trading Service")
 
     # Create tabs for different sections
-    tab1, tab2, tab3, tab4, tab5 = st.tabs(["📈 Strategies", "📊 Data View", "🔄 Legacy Backtest", "🤖 ML Pipeline", "📋 Coverage Report"])
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["📈 Strategies", "📊 Data View", "🔄 Legacy Backtest", "🤖 ML Pipeline", "💰 B2C Investment", "📋 Coverage Report"])
 
     with tab1:
         render_strategies_ui()
@@ -44,6 +45,9 @@ def main():
         render_production_ml_pipeline_ui()
 
     with tab5:
+        render_b2c_investment_ui()
+
+    with tab6:
         def show_coverage_report():
             html_path = "coverage_html/index.html"
             if os.path.exists(html_path):
