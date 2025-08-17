@@ -149,45 +149,54 @@ class PnLOptimizer:
     
     def calculate_pnl_objective(self, y_true, y_pred, prices):
         """Calculate PnL objective with risk constraints"""
-        if len(y_true) == 0 or len(y_pred) == 0:
+        try:
+            if len(y_true) == 0 or len(y_pred) == 0:
+                return -1.0
+            
+            if len(y_true) != len(y_pred):
+                return -1.0
+            
+            # Calculate actual PnL from predictions
+            pnl = 0.0
+            trades = 0
+            wins = 0
+            losses = 0
+            
+            for i in range(len(y_pred)):
+                if y_pred[i] == 1:  # Buy signal
+                    trades += 1
+                    if y_true[i] == 1:  # Correct prediction
+                        # Simulate profit (simplified)
+                        profit = np.random.uniform(0.005, 0.02)  # 0.5% to 2% profit
+                        pnl += profit
+                        wins += 1
+                    else:  # Wrong prediction
+                        # Simulate loss
+                        loss = np.random.uniform(0.01, 0.03)  # 1% to 3% loss
+                        pnl -= loss
+                        losses += 1
+            
+            if trades == 0:
+                return 0.0
+            
+            # Risk penalties
+            if pnl < 0:
+                pnl *= 3  # Heavy penalty for losses
+            
+            # Bonus for meeting target
+            if pnl >= self.target_pnl:
+                pnl *= 1.5
+            
+            # Penalty for too many losses
+            if trades > 0 and (losses / trades) > 0.6:
+                pnl *= 0.5
+            
+            return pnl
+            
+        except Exception as e:
+            # Log error but don't use st.error in Optuna context
+            print(f"PnL calculation error: {e}")
             return -1.0
-        
-        # Calculate actual PnL from predictions
-        pnl = 0.0
-        trades = 0
-        wins = 0
-        losses = 0
-        
-        for i in range(len(y_pred)):
-            if y_pred[i] == 1:  # Buy signal
-                trades += 1
-                if y_true[i] == 1:  # Correct prediction
-                    # Simulate profit (simplified)
-                    profit = np.random.uniform(0.005, 0.02)  # 0.5% to 2% profit
-                    pnl += profit
-                    wins += 1
-                else:  # Wrong prediction
-                    # Simulate loss
-                    loss = np.random.uniform(0.01, 0.03)  # 1% to 3% loss
-                    pnl -= loss
-                    losses += 1
-        
-        if trades == 0:
-            return 0.0
-        
-        # Risk penalties
-        if pnl < 0:
-            pnl *= 3  # Heavy penalty for losses
-        
-        # Bonus for meeting target
-        if pnl >= self.target_pnl:
-            pnl *= 1.5
-        
-        # Penalty for too many losses
-        if trades > 0 and (losses / trades) > 0.6:
-            pnl *= 0.5
-        
-        return pnl
     
     def optimize_lightgbm(self, X_train, y_train, X_val, y_val, prices_train, prices_val):
         """Optimize LightGBM for maximum PnL"""
@@ -224,7 +233,8 @@ class PnLOptimizer:
                 
                 return pnl_score
             except Exception as e:
-                st.error(f"LightGBM training error: {e}")
+                # Log error but don't use st.error in Optuna context
+                print(f"LightGBM training error: {e}")
                 return -1.0
         
         # Create study and optimize
@@ -266,7 +276,8 @@ class PnLOptimizer:
                 
                 return pnl_score
             except Exception as e:
-                st.error(f"Extreme Trees training error: {e}")
+                # Log error but don't use st.error in Optuna context
+                print(f"Extreme Trees training error: {e}")
                 return -1.0
         
         # Create study and optimize
