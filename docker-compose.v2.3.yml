@@ -113,6 +113,24 @@ services:
     networks:
       - b2c-network
 
+  # Hyperparameter Tuning Container
+  hyperparameter-tuning:
+    build:
+      context: ./containers/hyperparameter_tuning_container
+      dockerfile: Dockerfile
+    ports:
+      - "8509:8501"
+    environment:
+      - POSTGRES_URL=postgresql://user:pass@postgres:5432/quant_trading
+      - REDIS_URL=redis://redis:6379
+    volumes:
+      - ./containers/hyperparameter_tuning_container:/app
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - b2c-network
+
   # Platform Monitor Container
   platform-monitor:
     build:

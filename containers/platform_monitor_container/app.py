@@ -347,6 +347,14 @@ class PlatformMonitor:
                 'category': 'ML Pipeline'
             },
             {
+                'name': 'Hyperparameter Tuning',
+                'description': 'Optimize LightGBM and Extreme Trees for maximum PnL',
+                'port': 8509,
+                'status': 'running',
+                'icon': '🎯',
+                'category': 'ML Pipeline'
+            },
+            {
                 'name': 'Inference Container',
                 'description': 'Real-time model inference and predictions',
                 'port': 8502,
