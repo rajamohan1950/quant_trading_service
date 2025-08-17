@@ -99,8 +99,24 @@ def analyze_feature_categories(features_df):
 
 # Main app
 def main():
-    st.title("🔧 Feature Engineering Engine")
-    st.markdown("Generate and manage 200+ features with Redis storage")
+    # Navigation header
+    st.markdown("""
+    <div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <h1 style="margin: 0; color: #1f77b4;">🔧 Feature Engineering Engine</h1>
+                <p style="margin: 5px 0 0 0; color: #666;">Generate and manage 200+ features with Redis storage</p>
+            </div>
+            <div>
+                <a href="http://localhost:8507" target="_self" style="text-decoration: none;">
+                    <button style="background-color: #007bff; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px;">
+                        🔙 Back to Dashboard
+                    </button>
+                </a>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
     # Initialize components
     feature_engine = init_feature_engine()

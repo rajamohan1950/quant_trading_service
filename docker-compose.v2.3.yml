@@ -113,6 +113,25 @@ services:
     networks:
       - b2c-network
 
+  # Platform Monitor Container
+  platform-monitor:
+    build:
+      context: ./containers/platform_monitor_container
+      dockerfile: Dockerfile
+    ports:
+      - "8507:8501"
+    environment:
+      - REDIS_URL=redis://redis:6379
+      - POSTGRES_URL=postgresql://user:pass@postgres:5432/quant_trading
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /proc:/host/proc:ro
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - b2c-network
+
   # PostgreSQL Database
   postgres:
     image: postgres:15

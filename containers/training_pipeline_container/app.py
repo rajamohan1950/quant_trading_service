@@ -478,9 +478,24 @@ def train_model(request: TrainingRequest) -> Dict[str, Any]:
 def main():
     """Main Streamlit application for Training Pipeline Container"""
     
-    # Header
-    st.title("🎯 Training Pipeline Container - B2C Investment Platform")
-    st.markdown("Automated model training and versioning with comprehensive evaluation")
+    # Navigation header
+    st.markdown("""
+    <div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <h1 style="margin: 0; color: #1f77b4;">🎯 Training Pipeline Container</h1>
+                <p style="margin: 5px 0 0 0; color: #666;">Automated model training and versioning with comprehensive evaluation</p>
+            </div>
+            <div>
+                <a href="http://localhost:8507" target="_self" style="text-decoration: none;">
+                    <button style="background-color: #007bff; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px;">
+                        🔙 Back to Dashboard
+                    </button>
+                </a>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
     # Sidebar
     st.sidebar.header("🔧 Container Controls")

@@ -307,9 +307,24 @@ def update_order_metrics(client_id: str, order_type: str, execution_time: float,
 def main():
     """Main Streamlit application for Order Execution Container"""
     
-    # Header
-    st.title("📊 Order Execution Container - B2C Investment Platform")
-    st.markdown("Handles order execution through Zerodha Kite APIs with comprehensive tracking")
+    # Navigation header
+    st.markdown("""
+    <div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
+        <div style="display: flex; justify-content: space-between; align-items: center;">
+            <div>
+                <h1 style="margin: 0; color: #1f77b4;">📊 Order Execution Container</h1>
+                <p style="margin: 5px 0 0 0; color: #666;">Handles order execution through Zerodha Kite APIs with comprehensive tracking</p>
+            </div>
+            <div>
+                <a href="http://localhost:8507" target="_self" style="text-decoration: none;">
+                    <button style="background-color: #007bff; color: white; border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: bold; font-size: 14px;">
+                        🔙 Back to Dashboard
+                    </button>
+                </a>
+            </div>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
     
     # Sidebar
     st.sidebar.header("🔧 Container Controls")
