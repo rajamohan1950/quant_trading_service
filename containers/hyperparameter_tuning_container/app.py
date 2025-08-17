@@ -14,6 +14,8 @@ from plotly.subplots import make_subplots
 import os
 from datetime import datetime, timedelta
 import time
+import ast
+import traceback
 
 # Page configuration
 st.set_page_config(
@@ -30,6 +32,27 @@ class PnLOptimizer:
         self.feature_data = None
         self.target_pnl = 0.05  # 5% daily target
         self.max_loss_per_trade = 0.02  # 2% max loss per trade
+        
+        # Available Optuna samplers
+        self.available_samplers = {
+            'TPESampler': optuna.samplers.TPESampler,
+            'RandomSampler': optuna.samplers.RandomSampler,
+            'CmaEsSampler': optuna.samplers.CmaEsSampler,
+            'NSGAIISampler': optuna.samplers.NSGAIISampler,
+            'QMCSampler': optuna.samplers.QMCSampler,
+            'GridSampler': optuna.samplers.GridSampler,
+            'PartialFixedSampler': optuna.samplers.PartialFixedSampler
+        }
+        
+        # Available Optuna pruners
+        self.available_pruners = {
+            'None': None,
+            'MedianPruner': optuna.pruners.MedianPruner,
+            'PercentilePruner': optuna.pruners.PercentilePruner,
+            'HyperbandPruner': optuna.pruners.HyperbandPruner,
+            'ThresholdPruner': optuna.pruners.ThresholdPruner,
+            'PatientPruner': optuna.pruners.PatientPruner
+        }
         
     def connect_to_postgres(self):
         """Connect to PostgreSQL database"""
@@ -206,7 +229,7 @@ class PnLOptimizer:
             print(f"PnL calculation error: {e}")
             return -1.0
     
-    def optimize_lightgbm(self, X_train, y_train, X_val, y_val, prices_train, prices_val):
+    def optimize_lightgbm(self, X_train, y_train, X_val, y_val, prices_train, prices_val, sampler_name='TPESampler', pruner_name='MedianPruner'):
         """Optimize LightGBM for maximum PnL"""
         
         def objective(trial):
@@ -245,16 +268,98 @@ class PnLOptimizer:
                 print(f"LightGBM training error: {e}")
                 return -1.0
         
-        # Create study and optimize
+        # Create study with selected sampler and pruner
+        sampler = self.available_samplers.get(sampler_name, optuna.samplers.TPESampler)()
+        pruner = None
+        if pruner_name != 'None':
+            pruner = self.available_pruners.get(pruner_name, optuna.pruners.MedianPruner)()
+        
         study = optuna.create_study(
             direction='maximize', 
-            sampler=optuna.samplers.TPESampler(),
-            pruner=optuna.pruners.MedianPruner()
+            sampler=sampler,
+            pruner=pruner
         )
         
         return study, objective
     
-    def optimize_extreme_trees(self, X_train, y_train, X_val, y_val, prices_train, prices_val):
+    def create_custom_objective_function(self, objective_code, model_type):
+        """Create a custom objective function from user-provided code"""
+        try:
+            # Create a safe execution environment
+            local_vars = {
+                'np': np,
+                'pd': pd,
+                'X_train': None,  # Will be set during execution
+                'X_val': None,     # Will be set during execution
+                'y_train': None,   # Will be set during execution
+                'y_val': None,     # Will be set during execution
+                'prices_train': None,  # Will be set during execution
+                'prices_val': None,    # Will be set during execution
+                'trial': None,     # Will be set by Optuna
+                'model_type': model_type
+            }
+            
+            # Compile the code to check for syntax errors
+            compiled_code = compile(objective_code, '<string>', 'exec')
+            
+            def custom_objective(trial, X_train, y_train, X_val, y_val, prices_train, prices_val):
+                # Set the variables in local scope
+                local_vars.update({
+                    'X_train': X_train,
+                    'X_val': X_val,
+                    'y_train': y_train,
+                    'y_val': y_val,
+                    'prices_train': prices_train,
+                    'prices_val': prices_val,
+                    'trial': trial
+                })
+                
+                # Execute the custom code
+                exec(compiled_code, globals(), local_vars)
+                
+                # The custom code should define a variable called 'result'
+                if 'result' not in local_vars:
+                    raise ValueError("Custom objective function must define a variable called 'result'")
+                
+                return local_vars['result']
+            
+            return custom_objective
+            
+        except Exception as e:
+            st.error(f"Error creating custom objective function: {e}")
+            st.code(traceback.format_exc())
+            return None
+    
+    def optimize_with_custom_objective(self, objective_code, model_type, X_train, y_train, X_val, y_val, prices_train, prices_val, sampler_name='TPESampler', pruner_name='MedianPruner'):
+        """Optimize with custom objective function"""
+        
+        # Create custom objective
+        custom_objective = self.create_custom_objective_function(objective_code, model_type)
+        if custom_objective is None:
+            return None
+        
+        def objective(trial):
+            try:
+                return custom_objective(trial, X_train, y_train, X_val, y_val, prices_train, prices_val)
+            except Exception as e:
+                print(f"Custom objective error: {e}")
+                return -1.0
+        
+        # Create study with selected sampler and pruner
+        sampler = self.available_samplers.get(sampler_name, optuna.samplers.TPESampler)()
+        pruner = None
+        if pruner_name != 'None':
+            pruner = self.available_pruners.get(pruner_name, optuna.pruners.MedianPruner)()
+        
+        study = optuna.create_study(
+            direction='maximize',
+            sampler=sampler,
+            pruner=pruner
+        )
+        
+        return study, objective
+    
+    def optimize_extreme_trees(self, X_train, y_train, X_val, y_val, prices_train, prices_val, sampler_name='TPESampler', pruner_name='MedianPruner'):
         """Optimize Extreme Trees for maximum PnL"""
         
         def objective(trial):
@@ -288,11 +393,16 @@ class PnLOptimizer:
                 print(f"Extreme Trees training error: {e}")
                 return -1.0
         
-        # Create study and optimize
+        # Create study with selected sampler and pruner
+        sampler = self.available_samplers.get(sampler_name, optuna.samplers.TPESampler)()
+        pruner = None
+        if pruner_name != 'None':
+            pruner = self.available_pruners.get(pruner_name, optuna.pruners.MedianPruner)()
+        
         study = optuna.create_study(
             direction='maximize', 
-            sampler=optuna.samplers.TPESampler(),
-            pruner=optuna.pruners.MedianPruner()
+            sampler=sampler,
+            pruner=pruner
         )
         
         return study, objective
@@ -336,6 +446,18 @@ def main():
     if 'extreme_trees_running' not in st.session_state:
         st.session_state.extreme_trees_running = False
     
+    if 'lightgbm_sampler' not in st.session_state:
+        st.session_state.lightgbm_sampler = 'TPESampler'
+    
+    if 'lightgbm_pruner' not in st.session_state:
+        st.session_state.lightgbm_pruner = 'MedianPruner'
+    
+    if 'extreme_trees_sampler' not in st.session_state:
+        st.session_state.extreme_trees_sampler = 'TPESampler'
+    
+    if 'extreme_trees_pruner' not in st.session_state:
+        st.session_state.extreme_trees_pruner = 'MedianPruner'
+    
     # Main content
     col1, col2 = st.columns([2, 1])
     
@@ -352,12 +474,57 @@ def main():
                 else:
                     st.error("Failed to prepare training data")
         
+        # Algorithm Selection
+        st.subheader("🎛️ Optimization Algorithm Selection")
+        
+        col1a, col1b = st.columns(2)
+        with col1a:
+            selected_sampler = st.selectbox(
+                "Sampler Algorithm",
+                list(st.session_state.optimizer.available_samplers.keys()),
+                index=0,
+                help="Choose the hyperparameter sampling algorithm"
+            )
+            
+            # Show sampler description
+            sampler_descriptions = {
+                'TPESampler': 'Tree-structured Parzen Estimator - Best for most cases',
+                'RandomSampler': 'Random sampling - Good baseline, no assumptions',
+                'CmaEsSampler': 'Covariance Matrix Adaptation - Good for continuous parameters',
+                'NSGAIISampler': 'Multi-objective optimization - Good for multiple objectives',
+                'QMCSampler': 'Quasi-Monte Carlo - Good for high-dimensional spaces',
+                'GridSampler': 'Grid search - Exhaustive but slow',
+                'PartialFixedSampler': 'Fixed some parameters, optimize others'
+            }
+            st.caption(sampler_descriptions.get(selected_sampler, ''))
+        
+        with col1b:
+            selected_pruner = st.selectbox(
+                "Pruner Algorithm",
+                list(st.session_state.optimizer.available_pruners.keys()),
+                index=1,
+                help="Choose the trial pruning algorithm"
+            )
+            
+            # Show pruner description
+            pruner_descriptions = {
+                'None': 'No pruning - All trials run to completion',
+                'MedianPruner': 'Prune trials worse than median - Good balance',
+                'PercentilePruner': 'Prune trials below percentile - Conservative',
+                'HyperbandPruner': 'Multi-fidelity pruning - Good for early stopping',
+                'ThresholdPruner': 'Prune trials below threshold - Custom control',
+                'PatientPruner': 'Wait before pruning - Good for noisy objectives'
+            }
+            st.caption(pruner_descriptions.get(selected_pruner, ''))
+        
         # LightGBM Optimization
         if st.button("🔥 Start LightGBM Optimization", type="primary", disabled=st.session_state.lightgbm_running):
             if 'training_data' not in st.session_state:
                 st.error("Please prepare training data first")
             else:
                 st.session_state.lightgbm_running = True
+                st.session_state.lightgbm_sampler = selected_sampler
+                st.session_state.lightgbm_pruner = selected_pruner
                 st.rerun()
         
         # Extreme Trees Optimization  
@@ -366,6 +533,76 @@ def main():
                 st.error("Please prepare training data first")
             else:
                 st.session_state.extreme_trees_running = True
+                st.session_state.extreme_trees_sampler = selected_sampler
+                st.session_state.extreme_trees_pruner = selected_pruner
+                st.rerun()
+        
+        # Custom Objective Function
+        st.subheader("🎯 Custom Objective Function")
+        
+        custom_objective_code = st.text_area(
+            "Enter your custom objective function code:",
+            value="""# Your custom objective function
+# Available variables: trial, X_train, y_train, X_val, y_val, prices_train, prices_val
+# You must define a variable called 'result' at the end
+
+# Example: Custom PnL calculation with different weights
+if model_type == 'lightgbm':
+    # LightGBM hyperparameters
+    params = {
+        'n_estimators': trial.suggest_int('n_estimators', 100, 1000),
+        'learning_rate': trial.suggest_float('learning_rate', 0.01, 0.3),
+        'max_depth': trial.suggest_int('max_depth', 3, 10),
+        'random_state': 42
+    }
+    
+    model = lgb.LGBMClassifier(**params)
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_val)
+else:
+    # Extreme Trees hyperparameters
+    params = {
+        'n_estimators': trial.suggest_int('n_estimators', 100, 500),
+        'max_depth': trial.suggest_int('max_depth', 10, 50),
+        'random_state': 42
+    }
+    
+    model = ExtraTreesClassifier(**params)
+    model.fit(X_train, y_train)
+    y_pred = model.predict(X_val)
+
+# Custom PnL calculation
+pnl = 0.0
+trades = 0
+for i in range(len(y_pred)):
+    if y_pred[i] == 1:  # Buy signal
+        trades += 1
+        if y_val.iloc[i] == 1:  # Correct prediction
+            pnl += 0.02  # Fixed 2% profit
+        else:  # Wrong prediction
+            pnl -= 0.01  # Fixed 1% loss
+
+# Apply custom penalties
+if trades == 0:
+    result = 0.0
+elif pnl < 0:
+    result = pnl * 2  # Custom loss penalty
+else:
+    result = pnl * 1.5  # Custom profit bonus""",
+            height=300,
+            help="Write Python code for your custom objective function. Must define 'result' variable."
+        )
+        
+        if st.button("🚀 Start Custom Optimization", type="primary"):
+            if 'training_data' not in st.session_state:
+                st.error("Please prepare training data first")
+            elif not custom_objective_code.strip():
+                st.error("Please enter custom objective function code")
+            else:
+                st.session_state.custom_optimization = True
+                st.session_state.custom_objective_code = custom_objective_code
+                st.session_state.custom_sampler = selected_sampler
+                st.session_state.custom_pruner = selected_pruner
                 st.rerun()
     
     with col2:
@@ -383,7 +620,7 @@ def main():
     # Optimization Results
     st.subheader("📈 Optimization Progress")
     
-    col1, col2 = st.columns(2)
+    col1, col2, col3 = st.columns(3)
     
     with col1:
         st.subheader("🔥 LightGBM Results")
@@ -391,6 +628,8 @@ def main():
             study = st.session_state.lightgbm_study
             st.metric("Best PnL Score", f"{study.best_value:.4f}")
             st.metric("Trials Completed", len(study.trials))
+            st.metric("Sampler Used", st.session_state.lightgbm_sampler)
+            st.metric("Pruner Used", st.session_state.lightgbm_pruner)
             
             if study.best_params:
                 st.json(study.best_params)
@@ -403,11 +642,27 @@ def main():
             study = st.session_state.extreme_trees_study
             st.metric("Best PnL Score", f"{study.best_value:.4f}")
             st.metric("Trials Completed", len(study.trials))
+            st.metric("Sampler Used", st.session_state.extreme_trees_sampler)
+            st.metric("Pruner Used", st.session_state.extreme_trees_pruner)
             
             if study.best_params:
                 st.json(study.best_params)
         else:
             st.info("No Extreme Trees optimization results yet")
+    
+    with col3:
+        st.subheader("🎯 Custom Optimization Results")
+        if st.session_state.get('custom_study'):
+            study = st.session_state.custom_study
+            st.metric("Best PnL Score", f"{study.best_value:.4f}")
+            st.metric("Trials Completed", len(study.trials))
+            st.metric("Sampler Used", st.session_state.get('custom_sampler', 'Unknown'))
+            st.metric("Pruner Used", st.session_state.get('custom_pruner', 'Unknown'))
+            
+            if study.best_params:
+                st.json(study.best_params)
+        else:
+            st.info("No custom optimization results yet")
     
     # Run optimizations if requested
     if st.session_state.lightgbm_running and 'training_data' in st.session_state:
@@ -417,7 +672,9 @@ def main():
             study, objective = st.session_state.optimizer.optimize_lightgbm(
                 data['X_train'], data['y_train'], 
                 data['X_val'], data['y_val'],
-                data['prices_train'], data['prices_val']
+                data['prices_train'], data['prices_val'],
+                st.session_state.lightgbm_sampler,
+                st.session_state.lightgbm_pruner
             )
             
             # Run optimization
@@ -435,7 +692,9 @@ def main():
             study, objective = st.session_state.optimizer.optimize_extreme_trees(
                 data['X_train'], data['y_train'], 
                 data['X_val'], data['y_val'],
-                data['prices_train'], data['prices_val']
+                data['prices_train'], data['prices_val'],
+                st.session_state.extreme_trees_sampler,
+                st.session_state.extreme_trees_pruner
             )
             
             # Run optimization
@@ -445,6 +704,40 @@ def main():
             st.session_state.extreme_trees_running = False
             st.success("Extreme Trees optimization completed!")
             st.rerun()
+    
+    # Run custom optimization if requested
+    if st.session_state.get('custom_optimization', False) and 'training_data' in st.session_state:
+        data = st.session_state.training_data
+        
+        with st.spinner("🎯 Running Custom Optimization..."):
+            # For custom optimization, we need to choose model type
+            model_type = st.selectbox(
+                "Select model type for custom optimization:",
+                ['lightgbm', 'extreme_trees'],
+                key="custom_model_type"
+            )
+            
+            study, objective = st.session_state.optimizer.optimize_with_custom_objective(
+                st.session_state.custom_objective_code,
+                model_type,
+                data['X_train'], data['y_train'], 
+                data['X_val'], data['y_val'],
+                data['prices_train'], data['prices_val'],
+                st.session_state.custom_sampler,
+                st.session_state.custom_pruner
+            )
+            
+            if study and objective:
+                # Run optimization
+                study.optimize(objective, n_trials=50, timeout=900)  # 15 minutes max
+                
+                st.session_state.custom_study = study
+                st.session_state.custom_optimization = False
+                st.success("Custom optimization completed!")
+                st.rerun()
+            else:
+                st.error("Failed to create custom objective function")
+                st.session_state.custom_optimization = False
     
     # Feature importance visualization
     if st.session_state.lightgbm_study or st.session_state.extreme_trees_study:
