@@ -138,13 +138,21 @@ class PnLOptimizer:
         train_mask = self.feature_data['timestamp'] < split_date
         val_mask = self.feature_data['timestamp'] >= split_date
         
+        # Reset index to avoid KeyError issues
+        X_train = X[train_mask].reset_index(drop=True)
+        X_val = X[val_mask].reset_index(drop=True)
+        y_train = y[train_mask].reset_index(drop=True)
+        y_val = y[val_mask].reset_index(drop=True)
+        prices_train = prices[train_mask].reset_index(drop=True)
+        prices_val = prices[val_mask].reset_index(drop=True)
+        
         return {
-            'X_train': X[train_mask],
-            'X_val': X[val_mask],
-            'y_train': y[train_mask],
-            'y_val': y[val_mask],
-            'prices_train': prices[train_mask],
-            'prices_val': prices[val_mask]
+            'X_train': X_train,
+            'X_val': X_val,
+            'y_train': y_train,
+            'y_val': y_val,
+            'prices_train': prices_train,
+            'prices_val': prices_val
         }
     
     def calculate_pnl_objective(self, y_true, y_pred, prices):
