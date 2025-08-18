@@ -363,6 +363,14 @@ class PlatformMonitor:
                 'category': 'ML Pipeline'
             },
             {
+                'name': 'Model Adapters & Deployment',
+                'description': 'Model lifecycle management, versioning, and deployment pipeline',
+                'port': 8511,
+                'status': 'running',
+                'icon': '🚀',
+                'category': 'ML Pipeline'
+            },
+            {
                 'name': 'Inference Container',
                 'description': 'Real-time model inference and predictions',
                 'port': 8502,
