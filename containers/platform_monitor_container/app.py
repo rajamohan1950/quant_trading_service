@@ -355,6 +355,14 @@ class PlatformMonitor:
                 'category': 'ML Pipeline'
             },
             {
+                'name': 'Evaluation Container',
+                'description': 'Comprehensive model evaluation with PnL focus and API latency tracking',
+                'port': 8510,
+                'status': 'running',
+                'icon': '📊',
+                'category': 'ML Pipeline'
+            },
+            {
                 'name': 'Inference Container',
                 'description': 'Real-time model inference and predictions',
                 'port': 8502,
