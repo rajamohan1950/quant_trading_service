@@ -23,3 +23,7 @@ plotly>=5.0.0
 
 # ML (for feature selection)
 scikit-learn>=1.0.0
+
+# API Framework
+flask>=2.3.3
+flask-cors>=4.0.0

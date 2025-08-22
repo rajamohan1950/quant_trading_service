@@ -23,16 +23,19 @@ services:
       context: ./containers/inference_container
       dockerfile: Dockerfile
     ports:
-      - "8502:8501"
+      - "8502:8501"  # Streamlit UI
     environment:
       - REDIS_URL=redis://redis:6379
-      - POSTGRES_URL=postgresql://user:pass@postgres:5432/b2c_investment
+      - POSTGRES_URL=postgresql://user:pass@postgres:5432/quant_trading
       - MODEL_STORAGE_PATH=/app/models
+      - ORDER_EXECUTION_URL=http://order-execution-container:8501
     volumes:
+      - ./containers/inference_container:/app
       - ./ml_models:/app/models
     depends_on:
       - postgres
       - redis
+      - order-execution-container
     networks:
       - b2c-network
 

@@ -97,6 +97,51 @@ def analyze_feature_categories(features_df):
     
     return categories, feature_cols
 
+# API endpoint simulation using Streamlit
+@st.experimental_memo
+def get_features_api(symbol: str, limit: int = 100):
+    """Simulate API endpoint for features"""
+    try:
+        # Generate sample data
+        sample_data = generate_sample_data(limit)
+        
+        # Generate features
+        feature_engine = init_feature_engine()
+        if feature_engine:
+            features_df = feature_engine.generate_basic_features(sample_data)
+            features_df = feature_engine.generate_enhanced_features(features_df)
+            
+            # Convert to API-like response
+            return {
+                'symbol': symbol,
+                'features_count': len(features_df.columns),
+                'data_points': len(features_df),
+                'feature_names': list(features_df.columns),
+                'latest_features': features_df.iloc[-1].to_dict() if not features_df.empty else {},
+                'status': 'success'
+            }
+        else:
+            return {'error': 'Feature engine not available'}
+    except Exception as e:
+        return {'error': str(e)}
+
+# Health check simulation
+@st.experimental_memo
+def health_check_api():
+    """Simulate health check endpoint"""
+    try:
+        redis_client = init_redis()
+        redis_status = "connected" if redis_client else "disconnected"
+        
+        return {
+            'status': 'healthy',
+            'timestamp': datetime.now().isoformat(),
+            'redis': redis_status,
+            'feature_engine': 'available'
+        }
+    except Exception as e:
+        return {'status': 'unhealthy', 'error': str(e)}
+
 # Main app
 def main():
     # Navigation header
@@ -120,6 +165,13 @@ def main():
     
     # Initialize components
     feature_engine = init_feature_engine()
+    
+    # Health status display
+    health_status = check_container_health()
+    if health_status['status'] == 'healthy':
+        st.success(f"✅ Container Health: {health_status['status']} | Redis: {health_status['redis']}")
+    else:
+        st.error(f"❌ Container Health: {health_status['status']} | Error: {health_status.get('error', 'Unknown')}")
     
     if not feature_engine:
         st.error("❌ Feature engine initialization failed. Check Redis connection.")
@@ -145,8 +197,33 @@ def main():
             st.session_state.sample_data = sample_data
             st.success(f"✅ Generated {len(sample_data)} sample rows")
     
+    # Simulate API call for other containers
+    if st.sidebar.button("🔗 Simulate API Call"):
+        with st.spinner("Processing API request..."):
+            # Simulate what other containers would call
+            features_result = get_features_api(symbol, sample_rows)
+            if 'error' not in features_result:
+                st.success(f"✅ Features generated: {features_result['features_count']} features, {features_result['data_points']} data points")
+                st.session_state.last_api_result = features_result
+            else:
+                st.error(f"❌ Feature generation failed: {features_result['error']}")
+    
     # Main content
     col1, col2 = st.columns([2, 1])
+    
+    # Container status for other containers to check
+    with col1:
+        st.subheader("📊 Container Status")
+        st.write(f"**Symbol:** {symbol}")
+        st.write(f"**Feature Set:** {feature_set}")
+        st.write(f"**Version:** {version}")
+        st.write(f"**Sample Rows:** {sample_rows}")
+        
+        # Show last API result if available
+        if 'last_api_result' in st.session_state:
+            st.subheader("🔗 Last API Call Result")
+            result = st.session_state.last_api_result
+            st.json(result)
     
     with col1:
         st.subheader("📊 Data Preview")
@@ -402,6 +479,61 @@ def main():
             st.sidebar.error("❌ Disconnected")
     except:
         st.sidebar.error("❌ Connection failed")
+
+# API Endpoints for Container-to-Container Communication
+def create_api_endpoints():
+    """Create API endpoints for other containers to call"""
+    from flask import Flask, request, jsonify
+    
+    app = Flask(__name__)
+    
+    @app.route('/api/engineer-features', methods=['POST'])
+    def engineer_features():
+        """Engineer features from market data"""
+        try:
+            data = request.get_json()
+            
+            # Convert to DataFrame
+            df = pd.DataFrame(data)
+            
+            # Initialize feature engine
+            redis_client = init_redis()
+            if not redis_client:
+                return jsonify({'error': 'Redis not connected'}), 500
+            
+            feature_engine = EnhancedFeatureEngine(redis_client)
+            
+            # Generate features
+            features_df = feature_engine.generate_all_features(df)
+            
+            # Convert to JSON-serializable format
+            features_dict = {}
+            for col in features_df.columns:
+                if col != 'timestamp':
+                    features_dict[col] = features_df[col].tolist()
+                else:
+                    features_dict[col] = features_df[col].dt.strftime('%Y-%m-%d %H:%M:%S').tolist()
+            
+            return jsonify(features_dict)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/health', methods=['GET'])
+    def health_check():
+        """Health check endpoint"""
+        try:
+            redis_client = init_redis()
+            if redis_client:
+                return jsonify({'status': 'healthy', 'redis': 'connected'})
+            else:
+                return jsonify({'status': 'unhealthy', 'redis': 'disconnected'}), 500
+        except Exception as e:
+            return jsonify({'status': 'unhealthy', 'error': str(e)}), 500
+    
+    return app
+
+# Create Flask app for API endpoints
+api_app = create_api_endpoints()
 
 if __name__ == "__main__":
     main()

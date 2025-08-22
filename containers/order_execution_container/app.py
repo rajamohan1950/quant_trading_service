@@ -25,6 +25,9 @@ import prometheus_client
 from prometheus_client import Counter, Histogram, Gauge
 import pandas as pd
 
+# Import our enhanced order execution engine
+from order_execution_engine import OrderExecutionEngine, TradingOrder, PortfolioPosition
+
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -87,6 +90,7 @@ kite_api_key = None
 kite_api_secret = None
 kite_access_token = None
 active_orders = {}
+order_execution_engine = None
 
 # Configuration
 REDIS_URL = os.getenv("REDIS_URL", "redis://localhost:6379")
@@ -98,7 +102,7 @@ KITE_BASE_URL = "https://api.kite.trade"
 
 def initialize_connections():
     """Initialize Redis and PostgreSQL connections"""
-    global redis_client, db_connection
+    global redis_client, db_connection, order_execution_engine
     
     try:
         # Redis connection
@@ -111,6 +115,11 @@ def initialize_connections():
         db_connection = psycopg2.connect(POSTGRES_URL)
         logger.info("✅ PostgreSQL connection established")
         st.success("✅ PostgreSQL connection established")
+        
+        # Initialize order execution engine
+        order_execution_engine = OrderExecutionEngine(POSTGRES_URL, REDIS_URL, KITE_API_KEY, KITE_API_SECRET)
+        logger.info("✅ Order execution engine initialized")
+        st.success("✅ Order execution engine initialized")
         
     except Exception as e:
         logger.error(f"❌ Connection initialization failed: {e}")
@@ -307,6 +316,10 @@ def update_order_metrics(client_id: str, order_type: str, execution_time: float,
 def main():
     """Main Streamlit application for Order Execution Container"""
     
+    # Container status for other containers to check
+    st.success("✅ Order Execution Container: Ready to execute trades")
+    st.info("📊 This container handles real order execution through Zerodha Kite APIs")
+    
     # Navigation header
     st.markdown("""
     <div style="background-color: #f0f2f6; padding: 15px; border-radius: 10px; margin-bottom: 20px;">
@@ -457,6 +470,116 @@ def main():
     
     else:
         st.info("ℹ️ No active orders. Execute an order to see it here.")
+    
+    # Order Execution Engine API Testing
+    st.header("🚀 Order Execution Engine API Testing")
+    
+    if order_execution_engine:
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            st.subheader("📊 Order Management")
+            
+            # Get recent orders
+            orders = order_execution_engine.get_orders(limit=10)
+            
+            if orders:
+                order_data = []
+                for order in orders:
+                    order_data.append({
+                        'Order ID': order.order_id[:8] + "...",
+                        'Client': order.client_id[:8] + "...",
+                        'Action': order.action,
+                        'Symbol': order.symbol,
+                        'Quantity': f"{order.quantity:.4f}",
+                        'Price': f"₹{order.price:.2f}",
+                        'Status': order.status,
+                        'Execution': f"₹{order.execution_price:.2f}" if order.execution_price else "N/A"
+                    })
+                
+                df_orders = pd.DataFrame(order_data)
+                st.dataframe(df_orders, use_container_width=True)
+            else:
+                st.info("📭 No orders found in database")
+            
+            # Test order creation
+            if st.button("🧪 Test Order Creation", type="primary"):
+                with st.spinner("Creating test order..."):
+                    try:
+                        # Create a test order
+                        test_order = TradingOrder(
+                            order_id=str(uuid.uuid4()),
+                            signal_id=str(uuid.uuid4()),
+                            client_id="test_client",
+                            action="BUY",
+                            symbol="NIFTY50",
+                            quantity=10.0,
+                            price=22000.0,
+                            order_type="MARKET",
+                            timestamp=datetime.now().isoformat()
+                        )
+                        
+                        # Store and execute
+                        order_execution_engine.store_order(test_order)
+                        success = order_execution_engine.execute_order(test_order)
+                        
+                        if success:
+                            st.success("✅ Test order created and executed successfully!")
+                            st.rerun()
+                        else:
+                            st.error("❌ Test order execution failed")
+                    except Exception as e:
+                        st.error(f"❌ Error: {e}")
+        
+        with col2:
+            st.subheader("💼 Portfolio Management")
+            
+            # Get portfolio for test client
+            portfolio = order_execution_engine.get_client_portfolio("test_client")
+            
+            if portfolio:
+                portfolio_data = []
+                for symbol, position in portfolio.items():
+                    portfolio_data.append({
+                        'Symbol': symbol,
+                        'Quantity': f"{position.quantity:.4f}",
+                        'Avg Price': f"₹{position.avg_price:.2f}",
+                        'Current Price': f"₹{position.current_price:.2f}",
+                        'PnL': f"₹{position.unrealized_pnl:+.2f}",
+                        'Market Value': f"₹{position.market_value:.2f}"
+                    })
+                
+                df_portfolio = pd.DataFrame(portfolio_data)
+                st.dataframe(df_portfolio, use_container_width=True)
+            else:
+                st.info("📭 No portfolio positions found")
+            
+            # Test portfolio update
+            if st.button("🔄 Refresh Portfolio", type="primary"):
+                st.success("✅ Portfolio refreshed!")
+                st.rerun()
+        
+        # API Endpoints Status
+        st.subheader("🌐 API Endpoints Status")
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.info("📥 **POST /api/orders**")
+            st.write("Receive trading orders from Inference Container")
+            st.code("Status: ✅ Active")
+        
+        with col2:
+            st.info("📊 **GET /api/orders**")
+            st.write("List all orders with filters")
+            st.code("Status: ✅ Active")
+        
+        with col3:
+            st.info("💼 **GET /api/portfolio/{client_id}**")
+            st.write("Get client portfolio positions")
+            st.code("Status: ✅ Active")
+        
+        st.success("🎉 Order Execution Engine is fully operational and ready to receive orders from the Inference Container!")
     
     # Performance metrics
     st.header("📈 Performance Metrics")

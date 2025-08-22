@@ -413,5 +413,91 @@ def main():
     st.markdown("**Data Synthesizer Container v2.3.0** - Part of B2C Investment Platform")
     st.info("📊 **Note**: This container generates raw tick data only. Feature engineering is handled by the ML Service module.")
 
+# API Endpoints for Container-to-Container Communication
+def create_api_endpoints():
+    """Create API endpoints for other containers to call"""
+    from flask import Flask, request, jsonify
+    
+    app = Flask(__name__)
+    
+    @app.route('/api/market-data/status', methods=['GET'])
+    def get_market_data_status():
+        """Check if market data is available"""
+        try:
+            if db_connection:
+                cursor = db_connection.cursor()
+                cursor.execute("SELECT COUNT(*) FROM synthesized_tick_data")
+                count = cursor.fetchone()[0]
+                cursor.close()
+                
+                return jsonify({
+                    'has_data': count > 0,
+                    'total_rows': count,
+                    'timestamp': datetime.now().isoformat()
+                })
+            else:
+                return jsonify({'has_data': False, 'error': 'Database not connected'}), 500
+        except Exception as e:
+            return jsonify({'has_data': False, 'error': str(e)}), 500
+    
+    @app.route('/api/synthesize', methods=['POST'])
+    def trigger_synthesis():
+        """Trigger data synthesis"""
+        try:
+            data = request.get_json()
+            rows = data.get('rows', 10000)
+            symbols = data.get('symbols', ['NIFTY50'])
+            
+            # Generate data
+            result = generate_dataset_parallel({
+                'generation_id': str(uuid.uuid4()),
+                'client_id': 'b2c_container',
+                'dataset_type': 'tick_data',
+                'row_count': rows,
+                'start_date': (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d"),
+                'end_date': datetime.now().strftime("%Y-%m-%d"),
+                'symbols': symbols,
+                'batch_size': 1000
+            })
+            
+            return jsonify(result)
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    @app.route('/api/market-data/latest', methods=['GET'])
+    def get_latest_market_data():
+        """Get latest market data"""
+        try:
+            if db_connection:
+                cursor = db_connection.cursor()
+                cursor.execute("""
+                    SELECT symbol, price, volume, timestamp 
+                    FROM synthesized_tick_data 
+                    ORDER BY timestamp DESC 
+                    LIMIT 100
+                """)
+                rows = cursor.fetchall()
+                cursor.close()
+                
+                data = []
+                for row in rows:
+                    data.append({
+                        'symbol': row[0],
+                        'price': float(row[1]),
+                        'volume': int(row[2]),
+                        'timestamp': row[3].isoformat() if row[3] else None
+                    })
+                
+                return jsonify(data)
+            else:
+                return jsonify({'error': 'Database not connected'}), 500
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    
+    return app
+
+# Create Flask app for API endpoints
+api_app = create_api_endpoints()
+
 if __name__ == "__main__":
     main()
